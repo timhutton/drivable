@@ -1,0 +1,102 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <style>
+      body {
+        margin: 0px;
+        padding: 0px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="myCanvas" width="700" height="700"></canvas>
+    <script>
+      function draw(canvas) {
+        var context = canvas.getContext('2d');
+        
+        context.beginPath();
+        context.rect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = 'white';
+        context.fill();
+        context.lineWidth = 1;
+        context.strokeStyle = 'black';
+        context.stroke();
+        
+        context.beginPath();
+        context.rect(a-k, 500, k*2, 40);
+        context.fillStyle = 'black';
+        context.fill();
+        context.lineWidth = 1;
+        context.strokeStyle = 'black';
+        context.stroke();
+
+        context.beginPath();
+        context.rect(b-k, 500, k*2, 40);
+        context.fillStyle = 'grey';
+        context.fill();
+        context.lineWidth = 1;
+        context.strokeStyle = 'black';
+        context.stroke();
+      }
+      
+      function update_a(new_a) {
+        if( new_a-k < 0 || new_a+k > canvas.width )
+            return false;
+        if( b < new_a + k*2 )
+        {
+            // we need to move b too
+            var new_b = new_a + k*2;
+            if( update_b(new_b) )
+            {
+                // OK, that was fine, update a's value now
+                a = new_a;
+                return true;
+            }
+            else {
+                // b is stopping us from moving a like that
+                return false;
+            }
+        }
+        else {
+            // b has no problem with a moving there
+            a = new_a;
+            return true
+        }
+      }
+      
+      function update_b(new_b) {
+        if( new_b-k > 0 && new_b+k < canvas.width )
+        {
+            b = new_b;
+            return true;
+        }
+        return false;
+      }
+      
+      function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+      }
+      var canvas = document.getElementById('myCanvas');
+      var context = canvas.getContext('2d');
+      
+      var a = 100;
+      var b = 200;
+      var k = 30;
+      
+      canvas.addEventListener('mousemove', function(evt) {
+        var mousePos = getMousePos(canvas, evt);
+        var new_a = mousePos.x;
+        
+        update_a(new_a);
+        
+        draw(canvas);
+      }, false);
+      
+    </script>
+  </body>
+</html>
+      
