@@ -1,102 +1,181 @@
 <!DOCTYPE HTML>
 <html>
-  <head>
-    <style>
-      body {
+<head>
+<style>
+    body {
         margin: 0px;
         padding: 0px;
-      }
-    </style>
-  </head>
-  <body>
-    <canvas id="myCanvas" width="700" height="700"></canvas>
-    <script>
-      function draw(canvas) {
-        var context = canvas.getContext('2d');
-        
-        context.beginPath();
-        context.rect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = 'white';
-        context.fill();
-        context.lineWidth = 1;
-        context.strokeStyle = 'black';
-        context.stroke();
-        
-        context.beginPath();
-        context.rect(a-k, 500, k*2, 40);
-        context.fillStyle = 'black';
-        context.fill();
-        context.lineWidth = 1;
-        context.strokeStyle = 'black';
-        context.stroke();
+    }
+</style>
+</head>
+<body>
+<canvas id="myCanvas" width="700" height="700"></canvas>
+<script>
+function draw(canvas) {
+    var context = canvas.getContext('2d');
 
+    context.beginPath();
+    context.rect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = 'white';
+    context.fill();
+    context.lineWidth = 1;
+    context.strokeStyle = 'black';
+    context.stroke();
+
+    for( var i = 0; i < N; i++ ) {
+        var r = rectangles[i];
         context.beginPath();
-        context.rect(b-k, 500, k*2, 40);
-        context.fillStyle = 'grey';
+        context.rect(r.x, r.y, r.w, r.h);
+        if( i == iDriver ) {
+            if( currentMousePositionAccepted )
+                context.fillStyle = 'black';
+            else
+                context.fillStyle = 'red';
+        }
+        else
+            context.fillStyle = 'grey';
         context.fill();
         context.lineWidth = 1;
         context.strokeStyle = 'black';
         context.stroke();
-      }
-      
-      function update_a(new_a) {
-        if( new_a-k < 0 || new_a+k > canvas.width )
+    }
+}
+
+function tryMoveDriver(mousePos) {
+    var this_rect = rectangles[iDriver];
+    // if this move would put the rectangle outside of the area then reject it
+    if( mousePos.x < this_rect.w/2 || mousePos.x > canvas.width - this_rect.w/2 )
+        return false;
+    // if this move is 'too big' then reject it
+    if( Math.abs( this_rect.x + this_rect.w/2 - mousePos.x ) > maxSpeed )
+        return false;
+    // take a copy of the current state in case this move fails
+    var old_rectangles = new Array(rectangles.length);
+    for( var i = 0; i < N; i++ ) {
+        var r = rectangles[i];
+        old_rectangles[i] = new Rectangle( r.x, r.y, r.w, r.h );
+    }
+    // keep track of who has moved so far
+    var moved = new Array(rectangles.length);
+    for( var i = 0; i < N; i++ ) moved[i] = false;
+    moved[iDriver] = true;
+    this_rect.x = mousePos.x - rectangles[iDriver].w/2; // (we leave the y fixed)
+    for( var i = 0; i < N; i++ ) {
+        if( !connected[iDriver][i] ) continue;
+        if( !updateConnections( i, moved ) ) {
+            // cannot move here, restore the old state
+            for( var j = 0; j < N; j++ ) {
+                var r = old_rectangles[j];
+                rectangles[j].x = r.x;
+                rectangles[j].y = r.y;
+                rectangles[j].w = r.w;
+                rectangles[j].h = r.h;
+            }
             return false;
-        if( b < new_a + k*2 )
-        {
-            // we need to move b too
-            var new_b = new_a + k*2;
-            if( update_b(new_b) )
+        }
+    }
+    return true;
+}
+
+function rectanglesIntersectHorizontally( a, b ) {
+    return( a.x <= b.x + b.w && a.x + a.w >= b.x );
+}
+
+function updateConnections( i, moved ) {
+    var r = rectangles[i];
+    // are we (i) in conflict with any of our connected parts (j) that have already moved?
+    // if so then move out of the way if possible
+    for( var j = 0; j < N; j++ ) {
+        if( !connected[i][j] || !moved[j] ) continue;
+        var other_r = rectangles[j];
+        if( rectanglesIntersectHorizontally( r, other_r ) ) {
+            // attempt to resolve the conflict by moving
+            // for now we assume the move was 'small'
+            if( other_r.x + other_r.w - r.x > r.x + r.w - other_r.x )
             {
-                // OK, that was fine, update a's value now
-                a = new_a;
-                return true;
+                // we're being pushed from the right, so move left
+                r.x = other_r.x - r.w - epsilon;
+                moved[i] = true;
             }
             else {
-                // b is stopping us from moving a like that
-                return false;
+                // we're being pushed from the left, so move right
+                r.x = other_r.x + other_r.w + epsilon;
+                moved[i] = true;
             }
+            // if we are now off the grid then this move cannot happen
+            if( r.x < 0 || r.x > canvas.width-r.w )
+                return false;
         }
-        else {
-            // b has no problem with a moving there
-            a = new_a;
-            return true
+    }
+    // if we didn't move then there is nothing else to do
+    if( moved[i] == false )
+        return true;
+    // if we moved, then we need to let our connected parts move too (those that haven't already moved)
+    for( var j = 0; j < N; j++ ) {
+        if( connected[i][j] && !moved[j] ) {
+            if( !updateConnections(j, moved) )
+                return false; // there's a conflict somewhere
         }
-      }
-      
-      function update_b(new_b) {
-        if( new_b-k > 0 && new_b+k < canvas.width )
-        {
-            b = new_b;
-            return true;
-        }
-        return false;
-      }
-      
-      function getMousePos(canvas, evt) {
-        var rect = canvas.getBoundingClientRect();
-        return {
-          x: evt.clientX - rect.left,
-          y: evt.clientY - rect.top
-        };
-      }
-      var canvas = document.getElementById('myCanvas');
-      var context = canvas.getContext('2d');
-      
-      var a = 100;
-      var b = 200;
-      var k = 30;
-      
-      canvas.addEventListener('mousemove', function(evt) {
-        var mousePos = getMousePos(canvas, evt);
-        var new_a = mousePos.x;
-        
-        update_a(new_a);
-        
-        draw(canvas);
-      }, false);
-      
-    </script>
-  </body>
+    }
+    return true; // if we got this far then there was no conflict
+}
+
+function getMousePos(canvas, evt) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top
+    };
+}
+var canvas = document.getElementById('myCanvas');
+var context = canvas.getContext('2d');
+
+function Rectangle(x,y,w,h) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+}
+
+// make a train of trucks
+var N = 5;
+var rectangles = new Array(N);
+rectangles[0] = new Rectangle(100,100,50,30);
+rectangles[1] = new Rectangle(200,100,50,30);
+rectangles[2] = new Rectangle(300,100,50,30);
+rectangles[3] = new Rectangle(400,100,50,30);
+rectangles[4] = new Rectangle(500,100,50,30);
+// the connected array says whether there is a connection between parts i and j
+var connected = new Array(rectangles.length);
+for( var i = 0; i < N; i ++ ) {
+    connected[i] = new Array(rectangles.length);
+    for( var j = 0; j < N; j++ )
+        connected[i][j] = false;
+}
+// add connections between neighboring trucks (would also work with all connected but more efficient this way (important later))
+connected[0][1] = true;
+connected[1][0] = true;
+connected[1][2] = true;
+connected[2][1] = true;
+connected[2][3] = true;
+connected[3][2] = true;
+connected[3][4] = true;
+connected[4][3] = true;
+// one truck is the driver to start with
+var iDriver = 0;
+// we keep parts slightly apart to avoid rounding errors
+var epsilon = 1;
+// we stop things moving too fast (else they can pass through each other)
+var maxSpeed = 20;
+var currentMousePositionAccepted = true;
+draw(canvas);
+
+canvas.addEventListener('mousemove', function(evt) {
+    var mousePos = getMousePos(canvas, evt);
+    currentMousePositionAccepted = tryMoveDriver( mousePos );
+    draw(canvas);
+}, false);
+
+</script>
+</body>
 </html>
-      
