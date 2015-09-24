@@ -11,10 +11,10 @@ def doesCircleIntersectPoint(cx,cy,r,px,py):
     return math.hypot(cx-px,cy-py) < r
     
 r = 1
-for b in np.arange(-2,2,0.1):
+for b in np.arange(1,-1,-0.05):
     cx = math.sin(b)
-    cy = math.cos(b)-1
-    for a in np.arange(-2,2,0.1):
+    cy = 1.9-math.cos(b)
+    for a in np.arange(-1,1,0.05):
         px = a
         py = 0
         if doesCircleIntersectPoint(cx,cy,r,px,py):
