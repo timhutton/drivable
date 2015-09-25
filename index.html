@@ -9,8 +9,17 @@
 </style>
 </head>
 <body>
+<p>
+Grab a truck to slide it left and right. It turns red if it is blocked. In the same space we plot with a blue dot the truck positions as x and y. The lines are the constraints showing
+where the trucks collide.
+</p>
 <canvas id="myCanvas" width="700" height="700"></canvas>
 <script>
+
+function getTruckRect(i) {
+    return { x:variables[i]-truck_width/2, y: truck_top, w:truck_width, h:truck_height };
+}
+
 function draw(canvas) {
     var context = canvas.getContext('2d');
 
@@ -23,15 +32,13 @@ function draw(canvas) {
     context.stroke();
     
     // draw each truck as a rectangle
-    var h = 40;
-    var y = 200;
     for( var i = 0; i < N_VARIABLES; i++ ) {
-        var v = variables[i];
         context.beginPath();
-        context.rect( v-truck_width/2, y, truck_width, h);
+        var r = getTruckRect(i);
+        context.rect( r.x, r.y, r.w, r.h );
         if( i == iDriver ) {
             if( currentMousePositionAccepted )
-                context.fillStyle = 'black';
+                context.fillStyle = 'limegreen';
             else
                 context.fillStyle = 'red';
         }
@@ -148,8 +155,10 @@ function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
 
 var N_VARIABLES = 2;
 var variables = new Array(N_VARIABLES);
-variables[0] = 500;
-variables[1] = 200;
+variables[0] = 200;
+variables[1] = 500;
+
+var N_PARTS = N_VARIABLES; // (for now)
 
 function Connection(a,b) {
     this.a = a; // this indexed variable is the x-coordinate
@@ -158,6 +167,8 @@ function Connection(a,b) {
 }
 
 var truck_width = 60;
+var truck_height = 40;
+var truck_top = 200;
 
 var N_CONNECTIONS = 1;
 var connections = new Array(N_CONNECTIONS);
@@ -165,19 +176,32 @@ connections[0] = new Connection(0,1);
 connections[0].segments.push(new LineSegment(new Point(0,truck_width),new Point(canvas.width-truck_width,canvas.width)));
 connections[0].segments.push(new LineSegment(new Point(truck_width,0),new Point(canvas.width,canvas.width-truck_width)));
     
-// one truck is the driver to start with
-var iDriver = 1;
+// one truck is the driver
+var iDriver = -1; // -1 means nothing is currently the driver
 var currentMousePositionAccepted = true;
 draw(canvas);
 
+canvas.addEventListener('mousedown', function(evt) {
+    // if within a shape then make it the driver
+    var mousePos = getMousePos(canvas, evt);
+    for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
+        var r = getTruckRect(iPart);
+        if( mousePos.x >= r.x && mousePos.x <= r.x + r.w && mousePos.y >= r.y && mousePos.y <= r.y + r.h ) {
+            iDriver = iPart;
+            draw(canvas);
+        }
+    }
+}, false);
+
 canvas.addEventListener('mousemove', function(evt) {
+    if( iDriver < 0 ) return;
     var mousePos = getMousePos(canvas, evt);
     currentMousePositionAccepted = tryMoveDriver( mousePos );
     draw(canvas);
 }, false);
 
-canvas.addEventListener('click', function(evt) {
-    iDriver = 1-iDriver;
+canvas.addEventListener('mouseup', function(evt) {
+    iDriver = -1;
     draw(canvas);
 }, false);
 
