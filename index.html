@@ -9,9 +9,6 @@
 </style>
 </head>
 <body>
-    <p>A sketch of constraint-based movement. Your mouse movement controls the truck on the left.
-    You can use it to push the trucks to the right. It turns red when a move is not possible because some
-    constraint is not satisfied - either the movement is too great or a truck would be forced out of the square.</p>
 <canvas id="myCanvas" width="700" height="700"></canvas>
 <script>
 function draw(canvas) {
@@ -24,11 +21,14 @@ function draw(canvas) {
     context.lineWidth = 1;
     context.strokeStyle = 'black';
     context.stroke();
-
-    for( var i = 0; i < N; i++ ) {
-        var r = rectangles[i];
+    
+    // draw each truck as a rectangle
+    var h = 40;
+    var y = 200;
+    for( var i = 0; i < N_VARIABLES; i++ ) {
+        var v = variables[i];
         context.beginPath();
-        context.rect(r.x, r.y, r.w, r.h);
+        context.rect( v-truck_width/2, y, truck_width, h);
         if( i == iDriver ) {
             if( currentMousePositionAccepted )
                 context.fillStyle = 'black';
@@ -42,85 +42,56 @@ function draw(canvas) {
         context.strokeStyle = 'black';
         context.stroke();
     }
+    
+    // plot
+    for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
+        var connection = connections[iPlotConnection];
+        var x = variables[connection.a];
+        var y = variables[connection.b];
+        context.beginPath();
+        context.arc(x, y, 3, 0, 2*Math.PI);
+        context.fillStyle = 'blue';
+        context.fill();
+        for( var iSegment = 0; iSegment < connection.segments.length; iSegment++) {
+            var segment = connection.segments[iSegment];
+            context.beginPath();
+            context.moveTo(segment.p1.x, segment.p1.y);
+            context.lineTo(segment.p2.x, segment.p2.y);
+            context.lineWidth = 1;
+            context.strokeStyle = 'black';
+            context.stroke();
+        }
+    }
 }
 
 function tryMoveDriver(mousePos) {
-    var this_rect = rectangles[iDriver];
-    // if this move would put the rectangle outside of the area then reject it
-    if( mousePos.x < this_rect.w/2 || mousePos.x > canvas.width - this_rect.w/2 )
-        return false;
-    // if this move is 'too big' then reject it
-    if( Math.abs( this_rect.x + this_rect.w/2 - mousePos.x ) > maxSpeed )
-        return false;
-    // take a copy of the current state in case this move fails
-    var old_rectangles = new Array(rectangles.length);
-    for( var i = 0; i < N; i++ ) {
-        var r = rectangles[i];
-        old_rectangles[i] = new Rectangle( r.x, r.y, r.w, r.h );
-    }
-    // keep track of who has moved so far
-    var moved = new Array(rectangles.length);
-    for( var i = 0; i < N; i++ ) moved[i] = false;
-    moved[iDriver] = true;
-    this_rect.x = mousePos.x - rectangles[iDriver].w/2; // (we leave the y fixed)
-    for( var i = 0; i < N; i++ ) {
-        if( !connected[iDriver][i] ) continue;
-        if( !updateConnections( i, moved ) ) {
-            // cannot move here, restore the old state
-            for( var j = 0; j < N; j++ ) {
-                var r = old_rectangles[j];
-                rectangles[j].x = r.x;
-                rectangles[j].y = r.y;
-                rectangles[j].w = r.w;
-                rectangles[j].h = r.h;
-            }
-            return false;
-        }
-    }
-    return true;
-}
-
-function rectanglesIntersectHorizontally( a, b ) {
-    return( a.x <= b.x + b.w && a.x + a.w >= b.x );
-}
-
-function updateConnections( i, moved ) {
-    var r = rectangles[i];
-    // are we (i) in conflict with any of our connected parts (j) that have already moved?
-    // if so then move out of the way if possible
-    for( var j = 0; j < N; j++ ) {
-        if( !connected[i][j] || !moved[j] ) continue;
-        var other_r = rectangles[j];
-        if( rectanglesIntersectHorizontally( r, other_r ) ) {
-            // attempt to resolve the conflict by moving
-            // for now we assume the move was 'small'
-            if( other_r.x + other_r.w - r.x > r.x + r.w - other_r.x )
-            {
-                // we're being pushed from the right, so move left
-                r.x = other_r.x - r.w - epsilon;
-                moved[i] = true;
-            }
-            else {
-                // we're being pushed from the left, so move right
-                r.x = other_r.x + other_r.w + epsilon;
-                moved[i] = true;
-            }
-            // if we are now off the grid then this move cannot happen
-            if( r.x < 0 || r.x > canvas.width-r.w )
+    // the mouse drives the variable indexed by iDriver
+    var old_value = variables[iDriver];
+    var new_value = mousePos.x; 
+    // for each connection that involves this variable, construct the line segment in the state
+    // space of the two variables that this move represents, and see if it intersects any constraints
+    for( var iConnection = 0; iConnection < N_CONNECTIONS; iConnection++ ) {
+        var connection = connections[iConnection];
+        var other_value = 0;
+        if( connection.a == iDriver )
+            other_value = variables[ connection.b ];
+        else if( connection.b == iDriver )
+            other_value = variables[ connection.a ];
+        else
+            continue;
+        var moveSegment = new LineSegment( new Point( old_value, other_value ), new Point( new_value, other_value ) );
+        for( var iSegment = 0; iSegment < connection.segments.length; iSegment++ ) {
+            var constraint_segment = connection.segments[iSegment];
+            var ip = lineSegmentsIntersection( constraint_segment, moveSegment );
+            if( ip.test == true ) {
+                // for now, just disallow this move
                 return false;
+           }
         }
     }
-    // if we didn't move then there is nothing else to do
-    if( moved[i] == false )
-        return true;
-    // if we moved, then we need to let our connected parts move too (those that haven't already moved)
-    for( var j = 0; j < N; j++ ) {
-        if( connected[i][j] && !moved[j] ) {
-            if( !updateConnections(j, moved) )
-                return false; // there's a conflict somewhere
-        }
-    }
-    return true; // if we got this far then there was no conflict
+    
+    variables[iDriver] = new_value;
+    return true;
 }
 
 function getMousePos(canvas, evt) {
@@ -133,49 +104,80 @@ function getMousePos(canvas, evt) {
 var canvas = document.getElementById('myCanvas');
 var context = canvas.getContext('2d');
 
-function Rectangle(x,y,w,h) {
+// A drivable constraint is a line segment in the 2D space of two variables
+// representing a contact between two pieces. (Could generalize to curve segments.)
+// If your intended step takes you across the segment then it steers you to
+// one side or the other. if you meet it at right-angles then you get stuck
+// and can go no further. (For parts with more than one way of moving (e.g. sliding cogs)
+// a drivable constraint would be a patch of surface but we ignore such cases for now.)
+
+// A tricky question is how to compute these segments for a set of moving parts.
+// But if we know the segments then we can use them and let the user move the parts around.
+// So for now we manually specify a list of segments.
+
+// Each part has (for now) one variable that controls how it can move. e.g. a truck has a single
+// position, a rotating arm has an angle.
+// If two parts are capable of directly interacting then they have a connection. A connection is a list
+// of drivable constraints.
+
+function Point(x,y) {
     this.x = x;
     this.y = y;
-    this.w = w;
-    this.h = h;
+}
+function LineSegment(p1,p2) {
+    this.p1 = p1;
+    this.p2 = p2;
 }
 
-// make a train of trucks
-var N = 5;
-var rectangles = new Array(N);
-rectangles[0] = new Rectangle(100,100,50,30);
-rectangles[1] = new Rectangle(200,100,50,30);
-rectangles[2] = new Rectangle(300,100,50,30);
-rectangles[3] = new Rectangle(400,100,50,30);
-rectangles[4] = new Rectangle(500,100,50,30);
-// the connected array says whether there is a connection between parts i and j
-var connected = new Array(rectangles.length);
-for( var i = 0; i < N; i ++ ) {
-    connected[i] = new Array(rectangles.length);
-    for( var j = 0; j < N; j++ )
-        connected[i][j] = false;
+function lineSegmentsIntersection(s1,s2) {
+    return lineSegmentsIntersection2(s1.p1.x,s1.p1.y,s1.p2.x,s1.p2.y,s2.p1.x,s2.p1.y,s2.p2.x,s2.p2.y);
 }
-// add connections between neighboring trucks (would also work with all connected but more efficient this way (important later))
-connected[0][1] = true;
-connected[1][0] = true;
-connected[1][2] = true;
-connected[2][1] = true;
-connected[2][3] = true;
-connected[3][2] = true;
-connected[3][4] = true;
-connected[4][3] = true;
+function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
+  var det, gamma, lambda;
+  det = (c - a) * (s - q) - (r - p) * (d - b);
+  if (det === 0) {
+    return { test:false, point:null };
+  } else {
+    lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+    gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+    var intersects = (0 <= lambda && lambda <= 1) && (0 <= gamma && gamma <= 1);
+    var p = new Point( a + lambda * c, b + lambda*d );
+    return { test: intersects, point:p };
+  }
+};
+
+var N_VARIABLES = 2;
+var variables = new Array(N_VARIABLES);
+variables[0] = 500;
+variables[1] = 200;
+
+function Connection(a,b) {
+    this.a = a; // this indexed variable is the x-coordinate
+    this.b = b; // this indexed variable is the y-coordinate
+    this.segments = [];
+}
+
+var truck_width = 60;
+
+var N_CONNECTIONS = 1;
+var connections = new Array(N_CONNECTIONS);
+connections[0] = new Connection(0,1); 
+connections[0].segments.push(new LineSegment(new Point(0,truck_width),new Point(canvas.width-truck_width,canvas.width)));
+connections[0].segments.push(new LineSegment(new Point(truck_width,0),new Point(canvas.width,canvas.width-truck_width)));
+    
 // one truck is the driver to start with
-var iDriver = 0;
-// we keep parts slightly apart to avoid rounding errors
-var epsilon = 1;
-// we stop things moving too fast (else they can pass through each other)
-var maxSpeed = 20;
+var iDriver = 1;
 var currentMousePositionAccepted = true;
 draw(canvas);
 
 canvas.addEventListener('mousemove', function(evt) {
     var mousePos = getMousePos(canvas, evt);
     currentMousePositionAccepted = tryMoveDriver( mousePos );
+    draw(canvas);
+}, false);
+
+canvas.addEventListener('click', function(evt) {
+    iDriver = 1-iDriver;
     draw(canvas);
 }, false);
 
