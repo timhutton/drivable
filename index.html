@@ -1,6 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
+<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
 <style>
     body {
         margin: 10px;
@@ -10,21 +11,53 @@
 </head>
 <body>
 <p>
-Grab a truck to slide it left and right. It turns red if it is blocked. In the same space we plot with a blue dot the truck positions as x and y. The lines are the constraints showing
-where the trucks collide.
+Grab a truck to slide it left and right. It turns red if it is blocked. On the right we plot with a blue dot the two truck positions as x and y. The lines are the constraints showing
+where the trucks collide. Click on the plot to change the variables directly.</p>
+
+<p>
+The whole idea here is that we don't need to do collision detection at runtime since the constraints tell us everything we need to know about the movement. We are exploring the class of systems for which this concept remains useful.
 </p>
-<canvas id="myCanvas" width="700" height="700"></canvas>
+
+<p>
+BUG: trucks should pile up at the edges.
+</p>
+<canvas id="myCanvas" width="1200" height="700"></canvas>
 <script>
 
 function getTruckRect(i) {
     return { x:variables[i]-truck_width/2, y: truck_top, w:truck_width, h:truck_height };
 }
 
+function projectPlotToScreen(p) {
+    return new Point(p.x/2 + area_width+40, p.y/2+20 );
+}
+
+function projectScreenToPlot(p) {
+    return new Point((p.x - (area_width+40))*2, (p.y-20)*2 );
+}
+
+function projectAreaToScreen(p) {
+    return new Point(p.x+20, p.y+20 );
+}
+
+function projectScreenToArea(p) {
+    return new Point(p.x-20, p.y-20 );
+}
+
 function draw(canvas) {
     var context = canvas.getContext('2d');
 
+    // show the limit of the canvas itself
     context.beginPath();
     context.rect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#FAFAFA';
+    context.fill();
+    
+    // show the collision area
+    context.beginPath();
+    var a = projectAreaToScreen( new Point(0,0) );
+    var b = projectAreaToScreen( new Point(area_width,area_height) );
+    context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
     context.fillStyle = 'white';
     context.fill();
     context.lineWidth = 1;
@@ -35,7 +68,9 @@ function draw(canvas) {
     for( var i = 0; i < N_VARIABLES; i++ ) {
         context.beginPath();
         var r = getTruckRect(i);
-        context.rect( r.x, r.y, r.w, r.h );
+        var a = projectAreaToScreen( new Point( r.x, r.y ) );
+        var b = projectAreaToScreen( new Point( r.x + r.w, r.y + r.h) );
+        context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
         if( i == iDriver ) {
             if( currentMousePositionAccepted )
                 context.fillStyle = 'limegreen';
@@ -48,22 +83,35 @@ function draw(canvas) {
         context.lineWidth = 1;
         context.strokeStyle = 'black';
         context.stroke();
-    }
+        
+        context.font = "30px Arial";
+        context.textAlign = "center";
+        context.fillStyle = "black";
+        context.fillText("AB"[i],(a.x+b.x)/2,(a.y+b.y)/2+10);
+   }
     
     // plot
+    context.beginPath();
+    var a = projectPlotToScreen( new Point(0,0) );
+    var b = projectPlotToScreen( new Point(area_width, area_width) );
+    context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
+    context.fillStyle = 'white';
+    context.fill();
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
         var connection = connections[iPlotConnection];
-        var x = variables[connection.a];
-        var y = variables[connection.b];
+        var p = new Point( variables[connection.a], variables[connection.b] );
+        var pp = projectPlotToScreen( p );
         context.beginPath();
-        context.arc(x, y, 3, 0, 2*Math.PI);
+        context.arc(pp.x, pp.y, 3, 0, 2*Math.PI);
         context.fillStyle = 'blue';
         context.fill();
         for( var iSegment = 0; iSegment < connection.segments.length; iSegment++) {
             var segment = connection.segments[iSegment];
             context.beginPath();
-            context.moveTo(segment.p1.x, segment.p1.y);
-            context.lineTo(segment.p2.x, segment.p2.y);
+            var a = projectPlotToScreen( segment.p1 );
+            var b = projectPlotToScreen( segment.p2 );
+            context.moveTo( a.x, a.y);
+            context.lineTo( b.x, b.y );
             context.lineWidth = 1;
             context.strokeStyle = 'black';
             context.stroke();
@@ -71,29 +119,38 @@ function draw(canvas) {
     }
 }
 
-function tryMoveDriver(mousePos) {
+function tryMoveDriver( areaPos ) {
     // the mouse drives the variable indexed by iDriver
     var old_value = variables[iDriver];
-    var new_value = mousePos.x; 
+    var new_value = areaPos.x; 
     // for each connection that involves this variable, construct the line segment in the state
     // space of the two variables that this move represents, and see if it intersects any constraints
     for( var iConnection = 0; iConnection < N_CONNECTIONS; iConnection++ ) {
         var connection = connections[iConnection];
-        var other_value = 0;
+        var moveSegment;
         if( connection.a == iDriver )
-            other_value = variables[ connection.b ];
+            moveSegment = new LineSegment( new Point( old_value, variables[ connection.b ] ), new Point( new_value, variables[ connection.b ] ) );
         else if( connection.b == iDriver )
-            other_value = variables[ connection.a ];
+            moveSegment = new LineSegment( new Point( variables[ connection.a ], old_value ), new Point( variables[ connection.a ], new_value ) );
         else
             continue;
-        var moveSegment = new LineSegment( new Point( old_value, other_value ), new Point( new_value, other_value ) );
         for( var iSegment = 0; iSegment < connection.segments.length; iSegment++ ) {
             var constraint_segment = connection.segments[iSegment];
-            var ip = lineSegmentsIntersection( constraint_segment, moveSegment );
-            if( ip.test == true ) {
-                // for now, just disallow this move
+            var cr = testConstraint( moveSegment, constraint_segment );
+            if( !cr.hit ) continue;
+            if( cr.jam ) {
+                variables[ connection.a ] = cr.jamPoint.x;
+                variables[ connection.b ] = cr.jamPoint.y;
                 return false;
-           }
+            }
+            if( connection.a == iDriver ) {
+                new_value = cr.slide.p2.x;
+                variables[ connection.b ] = cr.slide.p2.y;
+            }
+            else if( connection.b == iDriver ) {
+                new_value = cr.slide.p2.y;
+                variables[ connection.a ] = cr.slide.p2.x;
+            }
         }
     }
     
@@ -135,7 +192,54 @@ function LineSegment(p1,p2) {
     this.p1 = p1;
     this.p2 = p2;
 }
-
+function isBehind( point, constraint ) {
+    var dp = dot( sub( point, constraint.p1 ), perp( sub( constraint.p2, constraint.p1 ) ) );
+    return dp > 0;
+}
+function perp( v ) {
+    return new Point( -v.y, v.x );
+}
+function add( a, b ) {
+    return new Point( a.x + b.x, a.y + b.y );
+}
+function sub( a, b ) {
+    return new Point( a.x - b.x, a.y - b.y );
+}
+function dot( a, b ) {
+    return a.x * b.x + a.y * b.y;
+}
+function lerp( a, b, u ) {
+    return new Point( a.x + u * (b.x - a.x), a.y + u * (b.y - a.y) );
+}
+function pointInRect( p, r ) {
+    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+// for a LineSegment 'move' we test whether it hits the constraint.
+// We return an object { hit:bool, jam:bool, before:LineSegment, slide:LineSegment }
+// where the segments are null if hit is false or jam or true
+function testConstraint(move,constraint) {
+    // a move is a collision if:
+    // 1. the move segment intersects the constraint segment
+    // 2. the end of the move is behind the constraint segment
+    // 3. the start of the move is not behind the constraint segment
+    // 4. the start of the move is not where we would slide to along the constraint
+    var intersection = lineSegmentsIntersection( move, constraint );
+    if( !intersection.test ) return { hit:false };
+    var endIsBehind = isBehind( move.p2, constraint );
+    if( !endIsBehind ) return { hit:false };
+    var startIsBehind = isBehind( move.p1, constraint );
+    if( startIsBehind ) return { hit:false };
+    var gradient = dot( sub( move.p2, move.p1 ), sub( constraint.p2, constraint.p1 ) );
+    if( Math.abs( gradient ) < 0.1 ) return { hit:true, jam:true, jamPoint:intersection.point };
+    var beforeSegment = new LineSegment( move.p1, intersection.point );
+    var slideEnd;
+    if( gradient < 0 ) slideEnd = constraint.p1;
+    else slideEnd = constraint.p2;
+    var slide_intersection = linesIntersect( constraint.p1, sub( constraint.p2, constraint.p1 ), move.p2, perp( sub( move.p2, move.p1 ) ) );
+    if( slide_intersection.test )
+        slideEnd = slide_intersection.point;
+    return { hit:true, jam:false, before:beforeSegment, slide: new LineSegment( intersection.point, slideEnd ) };
+}
 function lineSegmentsIntersection(s1,s2) {
     return lineSegmentsIntersection2(s1.p1.x,s1.p1.y,s1.p2.x,s1.p2.y,s2.p1.x,s2.p1.y,s2.p2.x,s2.p2.y);
 }
@@ -143,15 +247,30 @@ function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
   var det, gamma, lambda;
   det = (c - a) * (s - q) - (r - p) * (d - b);
   if (det === 0) {
-    return { test:false, point:null };
+    return { test:false };
   } else {
     lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
     gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
     var intersects = (0 <= lambda && lambda <= 1) && (0 <= gamma && gamma <= 1);
-    var p = new Point( a + lambda * c, b + lambda*d );
-    return { test: intersects, point:p };
+    var p = lerp( new Point(a,b), new Point(c,d), lambda );
+    return { test:intersects, point:p };
   }
-};
+}
+function linesIntersect( p1, v1, p2, v2 ) {
+    return linesIntersect2( p1.x, p1.y, p1.x+v1.x, p1.y+v1.y, p2.x, p2.y, p2.x+v2.x, p2.y+v2.y );
+}
+function linesIntersect2( a,b,c,d,p,q,r,s ) {
+  var det, gamma, lambda;
+  det = (c - a) * (s - q) - (r - p) * (d - b);
+  if (det === 0) {
+    return { test:false };
+  } else {
+    lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+    gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+    var p = lerp( new Point(a,b), new Point(c,d), lambda );
+    return { test:true, point:p };
+  }
+}
 
 var N_VARIABLES = 2;
 var variables = new Array(N_VARIABLES);
@@ -169,12 +288,18 @@ function Connection(a,b) {
 var truck_width = 60;
 var truck_height = 40;
 var truck_top = 200;
+var area_width = 700;
+var area_height = 400;
 
 var N_CONNECTIONS = 1;
 var connections = new Array(N_CONNECTIONS);
 connections[0] = new Connection(0,1); 
-connections[0].segments.push(new LineSegment(new Point(0,truck_width),new Point(canvas.width-truck_width,canvas.width)));
-connections[0].segments.push(new LineSegment(new Point(truck_width,0),new Point(canvas.width,canvas.width-truck_width)));
+connections[0].segments.push(new LineSegment(new Point(area_width-truck_width*3/2,area_width-truck_width/2),new Point(truck_width/2,truck_width+truck_width/2)));
+connections[0].segments.push(new LineSegment(new Point(truck_width/2,truck_width+truck_width/2),new Point(truck_width/2, area_width - truck_width/2)));
+connections[0].segments.push(new LineSegment(new Point(truck_width/2,area_width-truck_width/2),new Point(area_width - truck_width*3/2, area_width-truck_width/2)));
+connections[0].segments.push(new LineSegment(new Point(truck_width*3/2,truck_width/2), new Point(area_width-truck_width/2,area_width-truck_width*3/2)));
+connections[0].segments.push(new LineSegment(new Point(area_width - truck_width/2, area_width - truck_width*3/2),new Point(area_width - truck_width/2,truck_width/2)));
+connections[0].segments.push(new LineSegment(new Point(area_width - truck_width/2, truck_width/2),new Point(truck_width*3/2,truck_width/2)));
     
 // one truck is the driver
 var iDriver = -1; // -1 means nothing is currently the driver
@@ -184,19 +309,28 @@ draw(canvas);
 canvas.addEventListener('mousedown', function(evt) {
     // if within a shape then make it the driver
     var mousePos = getMousePos(canvas, evt);
+    var areaPos = projectScreenToArea( mousePos );
     for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
-        var r = getTruckRect(iPart);
-        if( mousePos.x >= r.x && mousePos.x <= r.x + r.w && mousePos.y >= r.y && mousePos.y <= r.y + r.h ) {
+        if( pointInRect( areaPos, getTruckRect( iPart ) ) ) {
             iDriver = iPart;
             draw(canvas);
+            break;
         }
+    }
+    var plotPos = projectScreenToPlot( mousePos );
+    if( pointInRect( plotPos, {x:0,y:0,w:area_width,h:area_width} ) )
+    {
+        variables[ 0 ] = plotPos.x;
+        variables[ 1 ] = plotPos.y;
+        draw(canvas);
     }
 }, false);
 
 canvas.addEventListener('mousemove', function(evt) {
     if( iDriver < 0 ) return;
     var mousePos = getMousePos(canvas, evt);
-    currentMousePositionAccepted = tryMoveDriver( mousePos );
+    var plotPos = projectScreenToArea( mousePos );
+    currentMousePositionAccepted = tryMoveDriver( plotPos );
     draw(canvas);
 }, false);
 
