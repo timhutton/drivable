@@ -35,10 +35,10 @@ function getPartLabel(i) {
 var plot_scale = 0.3;
 var margin = 20;
 function projectPlotToScreen( p, i ) {
-    return new Point(p.x*plot_scale + area_width+margin*2, p.y*plot_scale+margin + (area_width*plot_scale+margin)*i );
+    return new Point(p.x*plot_scale + area_width+margin*2, (area_width-p.y)*plot_scale+margin + (area_width*plot_scale+margin)*i );
 }
 function projectScreenToPlot( p, i ) {
-    return new Point( (p.x - (area_width+margin*2))/plot_scale, (p.y-margin-(area_width*plot_scale+margin)*i)/plot_scale );
+    return new Point( (p.x - (area_width+margin*2))/plot_scale, area_width - (p.y-margin-(area_width*plot_scale+margin)*i)/plot_scale );
 }
 function projectAreaToScreen( p ) {
     return new Point(p.x+margin, p.y+margin );
