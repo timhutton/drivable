@@ -237,7 +237,7 @@ function testConstraint( move, segment_group, iSegment ) {
     var gradient = getGradientForConstraint( move, constraint );
     if( Math.abs( gradient ) < minGradient ) return { hit:true, jam:true, jamPoint:intersection.point };
     var beforeSegment = new LineSegment( move.p1, intersection.point );
-    var slide_intersection = linesIntersect( constraint.p1, sub( constraint.p2, constraint.p1 ), move.p2, perp( sub( move.p2, move.p1 ) ) );
+    var slide_intersection = lineSegmentWithLineIntersection( constraint, move.p2, perp( sub( move.p2, move.p1 ) ) );
     if( slide_intersection.test ) {
         var slideEnd = slide_intersection.point;
         return { hit:true, jam:false, before:beforeSegment, slide: new LineSegment( intersection.point, slideEnd ) };
@@ -280,10 +280,10 @@ function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
     return { test:intersects, point:p };
   }
 }
-function linesIntersect( p1, v1, p2, v2 ) {
-    return linesIntersect2( p1.x, p1.y, p1.x+v1.x, p1.y+v1.y, p2.x, p2.y, p2.x+v2.x, p2.y+v2.y );
+function lineSegmentWithLineIntersection( s, p2, v2 ) {
+    return lineSegmentWithLineIntersection2( s.p1.x, s.p1.y, s.p2.x, s.p2.y, p2.x, p2.y, p2.x+v2.x, p2.y+v2.y );
 }
-function linesIntersect2( a,b,c,d,p,q,r,s ) {
+function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
   var det, gamma, lambda;
   det = (c - a) * (s - q) - (r - p) * (d - b);
   if (det === 0) {
@@ -291,8 +291,9 @@ function linesIntersect2( a,b,c,d,p,q,r,s ) {
   } else {
     lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
     gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+    var intersects = (0 <= lambda && lambda <= 1);
     var p = lerp( new Point(a,b), new Point(c,d), lambda );
-    return { test:true, point:p };
+    return { test:intersects, point:p };
   }
 }
 function getGradientForConstraint( move, constraint ) {
