@@ -30,20 +30,23 @@ function getTruckRect(i) {
     return { x:variables[i]-truck_width/2, y: truck_top, w:truck_width, h:truck_height };
 }
 
-function projectPlotToScreen(p) {
-    return new Point(p.x/2 + area_width+40, p.y/2+20 );
+var plot_scale = 0.4;
+var margin = 20;
+
+function projectPlotToScreen( p, i ) {
+    return new Point(p.x*plot_scale + area_width+margin*2, p.y*plot_scale+margin + (area_width*plot_scale+margin)*i );
 }
 
-function projectScreenToPlot(p) {
-    return new Point((p.x - (area_width+40))*2, (p.y-20)*2 );
+function projectScreenToPlot( p, i ) {
+    return new Point( (p.x - (area_width+margin*2))/plot_scale, (p.y-margin-(area_width*plot_scale+margin)*i)/plot_scale );
 }
 
-function projectAreaToScreen(p) {
-    return new Point(p.x+20, p.y+20 );
+function projectAreaToScreen( p ) {
+    return new Point(p.x+margin, p.y+margin );
 }
 
-function projectScreenToArea(p) {
-    return new Point(p.x-20, p.y-20 );
+function projectScreenToArea( p ) {
+    return new Point(p.x-margin, p.y-margin );
 }
 
 function draw(canvas) {
@@ -52,7 +55,7 @@ function draw(canvas) {
     // show the limit of the canvas itself
     context.beginPath();
     context.rect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = '#FAFAFA';
+    context.fillStyle = '#F0F0F0';
     context.fill();
     
     // show the collision area
@@ -89,31 +92,43 @@ function draw(canvas) {
         context.font = "30px Arial";
         context.textAlign = "center";
         context.fillStyle = "black";
-        context.fillText("AB"[i],(a.x+b.x)/2,(a.y+b.y)/2+10);
+        context.fillText("ABC"[i],(a.x+b.x)/2,(a.y+b.y)/2+10);
    }
     
     // plot
-    context.beginPath();
-    var a = projectPlotToScreen( new Point(0,0) );
-    var b = projectPlotToScreen( new Point(area_width, area_width) );
-    context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
-    context.fillStyle = 'white';
-    context.fill();
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
+        var connection = connections[ iPlotConnection ];
+        // blank the plot area
+        context.beginPath();
+        var a = projectPlotToScreen( new Point(0,0), iPlotConnection );
+        var b = projectPlotToScreen( new Point(area_width, area_width), iPlotConnection );
+        context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
+        context.fillStyle = 'white';
+        context.fill();
+        // label the axes
+        var horiz_axis_label_pos = projectPlotToScreen( new Point( area_width/2, area_width ), iPlotConnection );
+        var vert_axis_label_pos = projectPlotToScreen( new Point( 0, area_width/2 ), iPlotConnection );
+        context.font = "12px Arial";
+        context.textAlign = "center";
+        context.fillStyle = "black";
+        context.fillText( "ABC"[ connection.a ], horiz_axis_label_pos.x, horiz_axis_label_pos.y );
+        context.fillText( "ABC"[ connection.b ], vert_axis_label_pos.x, vert_axis_label_pos.y );
+        // draw the current state as a blue dot
         var connection = connections[iPlotConnection];
         var p = new Point( variables[connection.a], variables[connection.b] );
-        var pp = projectPlotToScreen( p );
+        var pp = projectPlotToScreen( p, iPlotConnection );
         context.beginPath();
         context.arc(pp.x, pp.y, 3, 0, 2*Math.PI);
         context.fillStyle = 'blue';
         context.fill();
+        // draw the constraints
         for( var iSegmentGroup = 0; iSegmentGroup < connection.connected_segments.length; iSegmentGroup++) {
             var segment_group = connection.connected_segments[ iSegmentGroup ];
             for( var iSegment = 0; iSegment < segment_group.segments.length; iSegment++) {
                 var segment = segment_group.segments[iSegment];
                 context.beginPath();
-                var a = projectPlotToScreen( segment.p1 );
-                var b = projectPlotToScreen( segment.p2 );
+                var a = projectPlotToScreen( segment.p1, iPlotConnection );
+                var b = projectPlotToScreen( segment.p2, iPlotConnection );
                 context.moveTo( a.x, a.y);
                 context.lineTo( b.x, b.y );
                 context.lineWidth = 1;
@@ -332,17 +347,13 @@ var epsilon = 1E-6; // for floating-point issues
 
 var N_CONNECTIONS = 1;
 var connections = new Array(N_CONNECTIONS);
+
 connections[0] = new Connection(0,1); 
 var group1 = new ConnectedSegmentGroup(); // within a group, segments join onto each other in sequence
 group1.segments.push(new LineSegment(new Point(area_width-truck_width*3/2,area_width-truck_width/2),new Point(truck_width/2,truck_width+truck_width/2)));
 group1.segments.push(new LineSegment(new Point(truck_width/2,truck_width+truck_width/2),new Point(truck_width/2, area_width - truck_width/2)));
 group1.segments.push(new LineSegment(new Point(truck_width/2,area_width-truck_width/2),new Point(area_width - truck_width*3/2, area_width-truck_width/2)));
 connections[0].connected_segments.push( group1 );
-var group2 = new ConnectedSegmentGroup();
-group2.segments.push(new LineSegment(new Point(truck_width*3/2,truck_width/2), new Point(area_width-truck_width/2,area_width-truck_width*3/2)));
-group2.segments.push(new LineSegment(new Point(area_width - truck_width/2, area_width - truck_width*3/2),new Point(area_width - truck_width/2,truck_width/2)));
-group2.segments.push(new LineSegment(new Point(area_width - truck_width/2, truck_width/2),new Point(truck_width*3/2,truck_width/2)));
-connections[0].connected_segments.push( group2 );
     
 // one truck is the driver
 var iDriver = -1; // -1 means nothing is currently the driver
@@ -350,30 +361,35 @@ var currentMousePositionAccepted = true;
 draw(canvas);
 
 canvas.addEventListener('mousedown', function(evt) {
-    // if within a shape then make it the driver
     var mousePos = getMousePos(canvas, evt);
+    // if within a shape then make it the driver
     var areaPos = projectScreenToArea( mousePos );
     for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
         if( pointInRect( areaPos, getTruckRect( iPart ) ) ) {
             iDriver = iPart;
             draw(canvas);
-            break;
+            return;
         }
     }
-    var plotPos = projectScreenToPlot( mousePos );
-    if( pointInRect( plotPos, {x:0,y:0,w:area_width,h:area_width} ) )
-    {
-        variables[ 0 ] = plotPos.x;
-        variables[ 1 ] = plotPos.y;
-        draw(canvas);
+    // if on a plot then set those variables directly
+    for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
+        var plotPos = projectScreenToPlot( mousePos, iPlotConnection );
+        if( pointInRect( plotPos, {x:0,y:0,w:area_width,h:area_width} ) )
+        {
+            var connection = connections[ iPlotConnection ];
+            variables[ connection.a ] = plotPos.x;
+            variables[ connection.b ] = plotPos.y;
+            draw(canvas);
+            return;
+        }
     }
 }, false);
 
 canvas.addEventListener('mousemove', function(evt) {
     if( iDriver < 0 ) return;
     var mousePos = getMousePos(canvas, evt);
-    var plotPos = projectScreenToArea( mousePos );
-    currentMousePositionAccepted = tryMoveDriver( plotPos );
+    var areaPos = projectScreenToArea( mousePos );
+    currentMousePositionAccepted = tryMoveDriver( areaPos );
     draw(canvas);
 }, false);
 
