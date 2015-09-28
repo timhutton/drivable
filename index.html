@@ -29,26 +29,23 @@ The whole idea here is that we don't need to do collision detection at runtime s
 function getTruckRect(i) {
     return { x:variables[i]-truck_width/2, y: truck_top, w:truck_width, h:truck_height };
 }
-
-var plot_scale = 0.4;
+function getPartLabel(i) {
+    return String.fromCharCode(65+i);
+}
+var plot_scale = 0.3;
 var margin = 20;
-
 function projectPlotToScreen( p, i ) {
     return new Point(p.x*plot_scale + area_width+margin*2, p.y*plot_scale+margin + (area_width*plot_scale+margin)*i );
 }
-
 function projectScreenToPlot( p, i ) {
     return new Point( (p.x - (area_width+margin*2))/plot_scale, (p.y-margin-(area_width*plot_scale+margin)*i)/plot_scale );
 }
-
 function projectAreaToScreen( p ) {
     return new Point(p.x+margin, p.y+margin );
 }
-
 function projectScreenToArea( p ) {
     return new Point(p.x-margin, p.y-margin );
 }
-
 function draw(canvas) {
     var context = canvas.getContext('2d');
 
@@ -92,7 +89,7 @@ function draw(canvas) {
         context.font = "30px Arial";
         context.textAlign = "center";
         context.fillStyle = "black";
-        context.fillText("ABC"[i],(a.x+b.x)/2,(a.y+b.y)/2+10);
+        context.fillText( getPartLabel(i), (a.x+b.x)/2, (a.y+b.y)/2+10 );
    }
     
     // plot
@@ -111,8 +108,8 @@ function draw(canvas) {
         context.font = "12px Arial";
         context.textAlign = "center";
         context.fillStyle = "black";
-        context.fillText( "ABC"[ connection.a ], horiz_axis_label_pos.x, horiz_axis_label_pos.y );
-        context.fillText( "ABC"[ connection.b ], vert_axis_label_pos.x, vert_axis_label_pos.y );
+        context.fillText( getPartLabel(connection.a), horiz_axis_label_pos.x, horiz_axis_label_pos.y );
+        context.fillText( getPartLabel(connection.b), vert_axis_label_pos.x, vert_axis_label_pos.y );
         // draw the current state as a blue dot
         var connection = connections[iPlotConnection];
         var p = new Point( variables[connection.a], variables[connection.b] );
@@ -175,6 +172,7 @@ function tryMoveDriver( areaPos ) {
             }
         }
     }
+    // TODO: deal with the implications for the parts that are not directly connected
     
     variables[iDriver] = new_value;
     return true;
@@ -323,8 +321,8 @@ function getGradientForConstraint( move, constraint ) {
 
 var N_VARIABLES = 2;
 var variables = new Array(N_VARIABLES);
-variables[0] = 200;
-variables[1] = 500;
+for( var i = 0; i < N_VARIABLES; i++ )
+    variables[i] = 100 * (i+1);
 
 var N_PARTS = N_VARIABLES; // (for now)
 
@@ -345,15 +343,18 @@ var area_height = 400;
 var minGradient = 0.1;
 var epsilon = 1E-6; // for floating-point issues
 
-var N_CONNECTIONS = 1;
+var N_CONNECTIONS = N_PARTS-1;
 var connections = new Array(N_CONNECTIONS);
 
-connections[0] = new Connection(0,1); 
-var group1 = new ConnectedSegmentGroup(); // within a group, segments join onto each other in sequence
-group1.segments.push(new LineSegment(new Point(area_width-truck_width*3/2,area_width-truck_width/2),new Point(truck_width/2,truck_width+truck_width/2)));
-group1.segments.push(new LineSegment(new Point(truck_width/2,truck_width+truck_width/2),new Point(truck_width/2, area_width - truck_width/2)));
-group1.segments.push(new LineSegment(new Point(truck_width/2,area_width-truck_width/2),new Point(area_width - truck_width*3/2, area_width-truck_width/2)));
-connections[0].connected_segments.push( group1 );
+// stop the trucks passing through each other or the wall
+for( var i = 0; i < N_CONNECTIONS; i++ ) {
+    connections[i] = new Connection(i,i+1); 
+    var group = new ConnectedSegmentGroup(); // within a group, segments join onto each other in sequence
+    group.segments.push(new LineSegment(new Point(area_width-truck_width*3/2,area_width-truck_width/2),new Point(truck_width/2,truck_width+truck_width/2)));
+    group.segments.push(new LineSegment(new Point(truck_width/2,truck_width+truck_width/2),new Point(truck_width/2, area_width - truck_width/2)));
+    group.segments.push(new LineSegment(new Point(truck_width/2,area_width-truck_width/2),new Point(area_width - truck_width*3/2, area_width-truck_width/2)));
+    connections[i].connected_segments.push( group );
+}
     
 // one truck is the driver
 var iDriver = -1; // -1 means nothing is currently the driver
