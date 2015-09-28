@@ -11,16 +11,18 @@
 </head>
 <body>
 <p>
-Grab a truck to slide it left and right. It turns red if it is blocked. On the right we plot with a blue dot the two truck positions as x and y. The lines are the constraints showing
-where the trucks collide. Click on the plot to change the variables directly.</p>
+Grab a truck to slide it left and right. It turns red if it is blocked.
+</p>
+
+<p>
+On the right we plot with a blue dot the two truck positions as x and y. The lines are the constraints showing
+where the trucks collide. Click on the plot to change the variables directly.
+</p>
 
 <p>
 The whole idea here is that we don't need to do collision detection at runtime since the constraints tell us everything we need to know about the movement. We are exploring the class of systems for which this concept remains useful.
 </p>
 
-<p>
-BUG: trucks sometimes slip through each other when in B-A order
-</p>
 <canvas id="myCanvas" width="1200" height="700"></canvas>
 <script>
 
@@ -198,11 +200,15 @@ function LineSegment(p1,p2) {
     this.p2 = p2;
 }
 function isBehind( point, constraint ) {
-    var dp = dot( sub( point, constraint.p1 ), perp( sub( constraint.p2, constraint.p1 ) ) );
-    return dp > 0;
+    var dp = dot( norm( sub( point, constraint.p1 ) ), norm( perp( sub( constraint.p2, constraint.p1 ) ) ) );
+    return dp > epsilon;
 }
 function perp( v ) {
     return new Point( -v.y, v.x );
+}
+function norm( v ) {
+    var vl = Math.hypot( v.x, v.y );
+    return new Point( v.x / vl, v.y / vl );
 }
 function add( a, b ) {
     return new Point( a.x + b.x, a.y + b.y );
@@ -232,8 +238,6 @@ function testConstraint( move, segment_group, iSegment ) {
     var endIsBehind = isBehind( move.p2, constraint );
     var startIsBehind = isBehind( move.p1, constraint );
     if( !intersection.test || !endIsBehind || startIsBehind ) {
-        if( intersection.test )
-            console.log('intersecting constraint ignored: endIsBehind=' + endIsBehind + ', startIsBehind=' + startIsBehind + ', move=' + move.p1.x + ',' + move.p1.y + ' -> ' + move.p2.x + ',' + move.p2.y );
         return { hit:false };
     }
     var gradient = getGradientForConstraint( move, constraint );
@@ -277,7 +281,7 @@ function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
   } else {
     lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
     gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-    var intersects = (0 <= lambda && lambda <= 1) && (0 <= gamma && gamma <= 1);
+    var intersects = (-epsilon <= lambda && lambda <= 1+epsilon) && (-epsilon <= gamma && gamma <= 1+epsilon);
     var p = lerp( new Point(a,b), new Point(c,d), lambda );
     return { test:intersects, point:p };
   }
@@ -293,7 +297,7 @@ function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
   } else {
     lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
     gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-    var intersects = (0 <= lambda && lambda <= 1);
+    var intersects = (-epsilon <= lambda && lambda <= 1+epsilon);
     var p = lerp( new Point(a,b), new Point(c,d), lambda );
     return { test:intersects, point:p };
   }
@@ -324,6 +328,7 @@ var truck_top = 200;
 var area_width = 700;
 var area_height = 400;
 var minGradient = 0.1;
+var epsilon = 1E-6; // for floating-point issues
 
 var N_CONNECTIONS = 1;
 var connections = new Array(N_CONNECTIONS);
