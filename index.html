@@ -229,7 +229,7 @@ function testConstraint(move,constraint) {
     if( !endIsBehind ) return { hit:false };
     var startIsBehind = isBehind( move.p1, constraint );
     if( startIsBehind ) return { hit:false };
-    var gradient = dot( sub( move.p2, move.p1 ), sub( constraint.p2, constraint.p1 ) );
+    var gradient = getGradientForConstraint( move, constraint );
     if( Math.abs( gradient ) < 0.1 ) return { hit:true, jam:true, jamPoint:intersection.point };
     var beforeSegment = new LineSegment( move.p1, intersection.point );
     var slideEnd;
@@ -270,6 +270,9 @@ function linesIntersect2( a,b,c,d,p,q,r,s ) {
     var p = lerp( new Point(a,b), new Point(c,d), lambda );
     return { test:true, point:p };
   }
+}
+function getGradientForConstraint( move, constraint ) {
+    return dot( sub( move.p2, move.p1 ), sub( constraint.p2, constraint.p1 ) );
 }
 
 var N_VARIABLES = 2;
