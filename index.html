@@ -367,7 +367,7 @@ function getGradientForConstraint( move, constraint ) {
     return dot( sub( move.p2, move.p1 ), sub( constraint.p2, constraint.p1 ) );
 }
 
-var N_VARIABLES = 4;
+var N_VARIABLES = 2;
 var variables = new Array(N_VARIABLES);
 for( var i = 0; i < N_VARIABLES; i++ )
     variables[i] = 100 * (i+1);
@@ -406,6 +406,23 @@ var connections = new Array(N_CONNECTIONS);
 for( var i = 0; i < N_CONNECTIONS; i++ ) {
     connections[i] = new Connection(i,i+1); 
     var group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
+    if( N_CONNECTIONS == 1 ) {
+        var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
+                                                        new Point( truck_width/2, truck_width + truck_width/2 ) ),
+                                       true,
+                                       true );
+        group.constraints.push( leftWall );
+        var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
+                                                          new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
+                                         true,
+                                         true );
+        group.constraints.push( trucksPush );
+        var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
+                                                         new Point( truck_width/2, area_width-truck_width/2 ) ),
+                                        true,
+                                        true );
+        group.constraints.push( rightWall );
+    }
     if( i == 0 ) {
         var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
                                                         new Point( truck_width/2, truck_width + truck_width/2 ) ),
