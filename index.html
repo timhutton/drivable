@@ -32,8 +32,6 @@ function getTruckRect(i) {
 function getPartLabel(i) {
     return String.fromCharCode(65+i);
 }
-var plot_scale = 0.3;
-var margin = 20;
 function projectPlotToScreen( p, i ) {
     return new Point(p.x*plot_scale + area_width+margin*2, (area_width-p.y)*plot_scale+margin + (area_width*plot_scale+margin)*i );
 }
@@ -344,6 +342,9 @@ var minGradient = 0.1;
 var epsilon = 1E-6; // for floating-point issues
 
 var N_CONNECTIONS = N_PARTS-1;
+var plot_scale = canvas.height / ( area_width * N_PARTS );
+var margin = 20;
+
 var connections = new Array(N_CONNECTIONS);
 
 // stop the trucks passing through each other or the wall
@@ -351,8 +352,8 @@ for( var i = 0; i < N_CONNECTIONS; i++ ) {
     connections[i] = new Connection(i,i+1); 
     var group = new ConnectedSegmentGroup(); // within a group, segments join onto each other in sequence
     group.segments.push(new LineSegment(new Point(area_width-truck_width*3/2,area_width-truck_width/2),new Point(truck_width/2,truck_width+truck_width/2)));
-    group.segments.push(new LineSegment(new Point(truck_width/2,truck_width+truck_width/2),new Point(truck_width/2, area_width - truck_width/2)));
-    group.segments.push(new LineSegment(new Point(truck_width/2,area_width-truck_width/2),new Point(area_width - truck_width*3/2, area_width-truck_width/2)));
+    if(i==0) group.segments.push(new LineSegment(new Point(truck_width/2,truck_width+truck_width/2),new Point(truck_width/2, area_width - truck_width/2)));
+    if(i==N_CONNECTIONS-1) group.segments.push(new LineSegment(new Point(truck_width/2,area_width-truck_width/2),new Point(area_width - truck_width*3/2, area_width-truck_width/2)));
     connections[i].connected_segments.push( group );
 }
     
