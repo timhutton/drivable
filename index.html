@@ -242,12 +242,14 @@ function isBehind( point, constraint ) {
     var dp = dot( norm( sub( point, constraint.p1 ) ), norm( perp( sub( constraint.p2, constraint.p1 ) ) ) );
     return dp < -epsilon; // (allow for floating point issues)
 }
+function len( v ) {
+    return Math.hypot( v.x, v.y );
+}
 function perp( v ) {
     return new Point( -v.y, v.x );
 }
 function norm( v ) {
-    var vl = Math.hypot( v.x, v.y );
-    return new Point( v.x / vl, v.y / vl );
+    return div( v, len( v ) );
 }
 function add( a, b ) {
     return new Point( a.x + b.x, a.y + b.y );
@@ -255,11 +257,17 @@ function add( a, b ) {
 function sub( a, b ) {
     return new Point( a.x - b.x, a.y - b.y );
 }
+function mul( a, f ) {
+    return new Point( a.x * f, a.y * f );
+}
+function div( a, f ) {
+    return new Point( a.x / f, a.y / f );
+}
 function dot( a, b ) {
     return a.x * b.x + a.y * b.y;
 }
 function lerp( a, b, u ) {
-    return new Point( a.x + u * (b.x - a.x), a.y + u * (b.y - a.y) );
+    return add( a, mul( sub( b, a ), u ) );
 }
 function pointInRect( p, r ) {
     return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
@@ -321,7 +329,7 @@ function testConstraint( move, constraints, iConstraint ) {
         return { hit:true, jam:true, jamPoint:slideEnd };
     }
     if( !has_neighbor || ( neighboring_gradient < 0 && gradient < 0 ) || ( neighboring_gradient > 0 && gradient > 0 ) ) {
-        if( Math.hypot( slideEnd.x - move.p1.x, slideEnd.y - move.p1.y ) < epsilon ) {
+        if( len( sub( slideEnd, move.p1 ) ) < epsilon ) {
             console.log("no collision - would slide to the same place as we started");
             return { hit:false };
         }
