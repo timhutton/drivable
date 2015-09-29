@@ -423,7 +423,7 @@ for( var i = 0; i < N_CONNECTIONS; i++ ) {
                                         true );
         group.constraints.push( rightWall );
     }
-    if( i == 0 ) {
+    else if( i == 0 ) {
         var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
                                                         new Point( truck_width/2, truck_width + truck_width/2 ) ),
                                        false,
