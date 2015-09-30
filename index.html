@@ -10,20 +10,29 @@
 </style>
 </head>
 <body>
-<p>
-Grab a truck to slide it left and right. It turns red if it is blocked.
-</p>
+<p>Grab a truck to slide it left and right. It turns red if it is blocked.</p>
 
-<p>
-On the right is a set of truck pairs, showing the constraints that exist between them. We plot with a blue dot the two truck positions as x and y. Click on the plot to change the variables directly.
-</p>
+<p>On the right is a set of truck pairs, showing the constraints that exist between them. We plot with a blue dot the two truck positions as x and y. Click on the plot to change the variables directly.</p>
 
-<p>
-The whole idea here is that we don't need to do collision detection at runtime since the constraints tell us everything we need to know about the movement. We are exploring the class of systems for which this concept remains useful.
-</p>
-
+<p>The whole idea here is that we don't need to do collision detection at runtime since the constraints tell us everything we need to know about the movement. We are exploring the class of systems for which this concept remains useful.</p>
 <canvas id="myCanvas" width="1200" height="700"></canvas>
 <script>
+
+// A drivable constraint is a line segment in the 2D space of two variables
+// representing a contact between two pieces. (Could generalize to curve segments.)
+// If your intended step takes you across the segment then it steers you to
+// one side or the other. If you meet it at right-angles then you get stuck
+// and can go no further. (For parts with more than one way of moving (e.g. sliding cogs)
+// a drivable constraint would be a patch of surface but we ignore such cases for now.)
+
+// A tricky question is how to compute these segments for a set of moving parts.
+// But if we know the segments then we can use them and let the user move the parts around.
+// So for now we manually specify a list of segments.
+
+// Each part has (for now) one variable that controls how it can move. e.g. a truck has a single
+// position, a rotating arm has an angle.
+// If two parts are capable of directly interacting then they have a connection. A connection is a list
+// of drivable constraints.
 
 var canvas = document.getElementById('myCanvas');
 var context = canvas.getContext('2d');
@@ -117,6 +126,8 @@ var currentMousePositionAccepted = true;
 var grabPos = null;
 draw(canvas);
 
+// -----------------------------------------------------------------------------------
+
 canvas.addEventListener('mousedown', function(evt) {
     var mousePos = getMousePos(canvas, evt);
     // if within a shape then make it the driver
@@ -143,6 +154,8 @@ canvas.addEventListener('mousedown', function(evt) {
     }
 }, false);
 
+// -----------------------------------------------------------------------------------
+
 canvas.addEventListener('mousemove', function(evt) {
     if( iDriver < 0 ) return;
     var mousePos = getMousePos(canvas, evt);
@@ -156,31 +169,53 @@ canvas.addEventListener('mousemove', function(evt) {
     draw(canvas);
 }, false);
 
+// -----------------------------------------------------------------------------------
+
 canvas.addEventListener('mouseup', function(evt) {
     iDriver = -1;
     draw(canvas);
 }, false);
 
+// -----------------------------------------------------------------------------------
+
 function getTruckRect(i) {
     return { x:variables[i]-truck_width/2, y: truck_top, w:truck_width, h:truck_height };
 }
+
+// -----------------------------------------------------------------------------------
+
 function getPartLabel(i) {
     return String.fromCharCode(65+i);
 }
+
+// -----------------------------------------------------------------------------------
+
 function projectAreaToScreen( p ) {
     return new Point(p.x+margin, p.y+margin );
 }
+
+// -----------------------------------------------------------------------------------
+
 function projectScreenToArea( p ) {
     return new Point(p.x-margin, p.y-margin );
 }
+
+// -----------------------------------------------------------------------------------
+
 function projectPlotToScreen( p, i ) {
     return new Point( p.x*plot_scale + area_width+margin*2, 
                       (area_width*plot_scale+margin)*i + margin + (area_width-p.y)*plot_scale  );
 }
+
+// -----------------------------------------------------------------------------------
+
 function projectScreenToPlot( p, i ) {
     return new Point( ( p.x - (area_width+margin*2) ) / plot_scale, 
                       area_width - (p.y - (area_width*plot_scale+margin)*i - margin ) / plot_scale );
 }
+
+// -----------------------------------------------------------------------------------
+
 function draw(canvas) {
     var context = canvas.getContext('2d');
 
@@ -225,7 +260,7 @@ function draw(canvas) {
         context.textAlign = "center";
         context.fillStyle = "black";
         context.fillText( getPartLabel(i), (a.x+b.x)/2, (a.y+b.y)/2+10 );
-   }
+    }
     
     // plot
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
@@ -271,33 +306,38 @@ function draw(canvas) {
     }
 }
 
+// -----------------------------------------------------------------------------------
+
 // return true if we were able to perform the whole move
-function tryMoveDriver( grabPos, areaPos ) {
-    var new_value = variables[ iDriver ] + areaPos.x - grabPos.x; // (for now, specific to horizontal trucks)
+function tryMoveDriver( grabPos, mousePos ) {
+    var new_value = variables[ iDriver ] + mousePos.x - grabPos.x; // (for now, specific to horizontal trucks)
     var moved = new Array( N_VARIABLES );
     for( var i = 0; i < N_VARIABLES; i++ )
         moved[ i ] = false;
     return tryChangeVariable( iDriver, new_value, moved );
 }
 
+// -----------------------------------------------------------------------------------
+
 function tryChangeVariable( iVariable, new_value, moved ) {
-    // TODO: take copy of moved values, in order to restore after each recursion call?
-    while(1) {
-        // TODO: restore initial moved values?
+    // TODO: take copy of moved values, in order to restore after each recursion call? think only need if 
+    //       repeatedly searching for constraints in order to go all the way to new_value
+    //while(1) 
+    {
         // find the first constraint that intersects this change
         var cr = findFirstConstraintCollision( iVariable, new_value, moved );
-        // if none then set this variable to new_value and return true
+        // if none then there's nothing in the way, so we don't need to check any further
         if( cr.outcome == MISS ) {
-            // there's nothing in the way, so we don't need to check any further
             variables[ iVariable ] = new_value;
             return true;
         }
-        // if friction jam then set this variable to the jam point and return false
+        // if friction jam then we can stop immediately, with no knock-on effects
         if( cr.outcome == FRICTION_JAM ) {
             variables[ iVariable ] = cr.isA ? cr.firstContact.x : cr.firstContact.y;
             return false;
         }
-        // else is slide (to end or partial)
+        // else this move has caused a slide (to end of constraint or partial) which
+        // drives another variable. So we need to recurse down to check if we can change *that* variable.
         var old_other_value = variables[ cr.iOtherVariable ];
         var new_other_value = cr.isA ? cr.slideTo.y : cr.slideTo.x;
         moved[ iVariable ] = true;
@@ -327,9 +367,13 @@ function tryChangeVariable( iVariable, new_value, moved ) {
         // (maybe check here that we did make *some* progress, else may loop forever)
         // (or guarantee that we haven't checked each constraint already)
         return true; // DEBUG - although maybe is actually better like this for visualisation since it draws the progress so far
-                     //         and subsequent mouse moves will take it further
+                     //         and subsequent mouse moves will take it further. for parts with complex shapes this might get annoying
+                     //         since the user would have to wiggle their mouse to persuade the driven part to keep moving through
+                     //         multiple constraints.
     }
 }
+
+// -----------------------------------------------------------------------------------
 
 function findFirstConstraintCollision( iVariable, new_value, moved ) {
     // Find the first constraint that intersects this change (in any connection that this variable has with a not moved variable)
@@ -373,6 +417,8 @@ function findFirstConstraintCollision( iVariable, new_value, moved ) {
     return first_collision;
 }
 
+// -----------------------------------------------------------------------------------
+
 function getMousePos(canvas, evt) {
     var rect = canvas.getBoundingClientRect();
     return {
@@ -380,64 +426,90 @@ function getMousePos(canvas, evt) {
         y: evt.clientY - rect.top
     };
 }
-// A drivable constraint is a line segment in the 2D space of two variables
-// representing a contact between two pieces. (Could generalize to curve segments.)
-// If your intended step takes you across the segment then it steers you to
-// one side or the other. If you meet it at right-angles then you get stuck
-// and can go no further. (For parts with more than one way of moving (e.g. sliding cogs)
-// a drivable constraint would be a patch of surface but we ignore such cases for now.)
 
-// A tricky question is how to compute these segments for a set of moving parts.
-// But if we know the segments then we can use them and let the user move the parts around.
-// So for now we manually specify a list of segments.
-
-// Each part has (for now) one variable that controls how it can move. e.g. a truck has a single
-// position, a rotating arm has an angle.
-// If two parts are capable of directly interacting then they have a connection. A connection is a list
-// of drivable constraints.
+// -----------------------------------------------------------------------------------
 
 function Point(x,y) {
     this.x = x;
     this.y = y;
 }
+
+// -----------------------------------------------------------------------------------
+
 function LineSegment(p1,p2) {
     this.p1 = p1;
     this.p2 = p2;
 }
+
+// -----------------------------------------------------------------------------------
+
 function isBehind( point, constraint ) {
     var dp = dot( norm( sub( point, constraint.p1 ) ), norm( perp( sub( constraint.p2, constraint.p1 ) ) ) );
     return dp < -epsilon; // (allow for floating point issues)
 }
+
+// -----------------------------------------------------------------------------------
+
 function len( v ) {
     return Math.hypot( v.x, v.y );
 }
+
+// -----------------------------------------------------------------------------------
+
 function perp( v ) {
     return new Point( -v.y, v.x );
 }
+
+// -----------------------------------------------------------------------------------
+
 function norm( v ) {
     return div( v, len( v ) );
 }
+
+// -----------------------------------------------------------------------------------
+
 function add( a, b ) {
     return new Point( a.x + b.x, a.y + b.y );
 }
+
+// -----------------------------------------------------------------------------------
+
 function sub( a, b ) {
     return new Point( a.x - b.x, a.y - b.y );
 }
+
+// -----------------------------------------------------------------------------------
+
 function mul( a, f ) {
     return new Point( a.x * f, a.y * f );
 }
+
+// -----------------------------------------------------------------------------------
+
 function div( a, f ) {
     return new Point( a.x / f, a.y / f );
 }
+
+// -----------------------------------------------------------------------------------
+
 function dot( a, b ) {
     return a.x * b.x + a.y * b.y;
 }
+
+// -----------------------------------------------------------------------------------
+
 function lerp( a, b, u ) {
     return add( a, mul( sub( b, a ), u ) );
 }
+
+// -----------------------------------------------------------------------------------
+
 function pointInRect( p, r ) {
     return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
+
+// -----------------------------------------------------------------------------------
+
 function testConstraint( move, constraints, iConstraint ) {
     var constraint = constraints[iConstraint];
     // a move is a collision if:
@@ -500,9 +572,15 @@ function testConstraint( move, constraints, iConstraint ) {
     // slide to corner jam
     return { outcome:SLIDE_TO_CORNER_JAM, firstContact:intersection.point, slideTo:slideEnd };
 }
+
+// -----------------------------------------------------------------------------------
+
 function lineSegmentsIntersection(s1,s2) {
     return lineSegmentsIntersection2(s1.p1.x,s1.p1.y,s1.p2.x,s1.p2.y,s2.p1.x,s2.p1.y,s2.p2.x,s2.p2.y);
 }
+
+// -----------------------------------------------------------------------------------
+
 function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
   var det, gamma, lambda;
   det = (c - a) * (s - q) - (r - p) * (d - b);
@@ -516,9 +594,15 @@ function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
     return { test:intersects, point:p };
   }
 }
+
+// -----------------------------------------------------------------------------------
+
 function lineSegmentWithLineIntersection( s, p2, v2 ) {
     return lineSegmentWithLineIntersection2( s.p1.x, s.p1.y, s.p2.x, s.p2.y, p2.x, p2.y, p2.x+v2.x, p2.y+v2.y );
 }
+
+// -----------------------------------------------------------------------------------
+
 function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
   var det, gamma, lambda;
   det = (c - a) * (s - q) - (r - p) * (d - b);
@@ -532,23 +616,37 @@ function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
     return { test:intersects, point:p };
   }
 }
+
+// -----------------------------------------------------------------------------------
+
 function getGradientForConstraint( move, constraint ) {
     return dot( sub( move.p2, move.p1 ), sub( constraint.p2, constraint.p1 ) );
 }
+
+// -----------------------------------------------------------------------------------
 
 function Connection(a,b) {
     this.a = a; // this indexed variable is the x-coordinate
     this.b = b; // this indexed variable is the y-coordinate
     this.connected_segments = [];
 }
+
+// -----------------------------------------------------------------------------------
+
 function ConnectedSegmentGroup() {
     this.constraints = [];
 }
+
+// -----------------------------------------------------------------------------------
+
 function Constraint(s,cp,cn) {
     this.segment = s;
     this.connected_to_previous = cp;
     this.connected_to_next = cn;
 }
+
+// -----------------------------------------------------------------------------------
+
 </script>
 </body>
 </html>
