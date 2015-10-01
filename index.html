@@ -49,9 +49,26 @@ var margin = 20; // pixels
 var N_VARIABLES = 5; // change this to add more trucks!
 var N_PARTS = N_VARIABLES; // (for now each part has a single degree of freedom)
 
+// each part is a polygon, centered at its rotation point
+var parts = new Array( N_PARTS );
+for( var i = 0; i < N_PARTS; i++ ) {
+    parts[i] = [ new Point(-truck_width/2,-truck_height/2), new Point(truck_width/2,-truck_height/2),
+                 new Point(truck_width/2,truck_height/2), new Point(-truck_width/2,truck_height/2) ];
+}
+
+var transforms = new Array(N_VARIABLES);
+for( var i = 0; i < N_VARIABLES; i++ ) {
+    // each part is rotated around its origin before being translated
+    transforms[i] = { start_rotation:0, 
+                      rotation:0, 
+                      start_translation:new Point(0,truck_top), 
+                      translation:new Point(1,0) };
+}
+
 var variables = new Array(N_VARIABLES);
-for( var i = 0; i < N_VARIABLES; i++ )
+for( var i = 0; i < N_VARIABLES; i++ ) {
     variables[i] = (i+1) * area_width / (N_PARTS+1);
+}    
 
 var N_CONNECTIONS = N_PARTS-1;
 var plot_scale = ( canvas.height - margin*(N_CONNECTIONS+1) ) / ( area_width * N_CONNECTIONS );
@@ -124,6 +141,7 @@ for( var i = 0; i < N_CONNECTIONS; i++ ) {
 var iDriver = -1; // -1 means nothing is currently the driver
 var currentMousePositionAccepted = true;
 var grabPos = null;
+
 draw(canvas);
 
 // -----------------------------------------------------------------------------------
@@ -133,7 +151,7 @@ canvas.addEventListener('mousedown', function(evt) {
     // if within a shape then make it the driver
     var areaPos = projectScreenToArea( mousePos );
     for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
-        if( pointInRect( areaPos, getTruckRect( iPart ) ) ) {
+        if( pointInPolygon( getTransformedPart( iPart ), areaPos ) ) {
             iDriver = iPart;
             grabPos = areaPos;
             draw(canvas);
@@ -178,8 +196,13 @@ canvas.addEventListener('mouseup', function(evt) {
 
 // -----------------------------------------------------------------------------------
 
-function getTruckRect(i) {
-    return { x:variables[i]-truck_width/2, y: truck_top, w:truck_width, h:truck_height };
+function getTransformedPart( iPart ) {
+    var tp = [];
+    for( var i = 0; i < parts[iPart].length; i++ ) {
+        tp.push( applyTransform( parts[iPart][i], transforms[iPart], variables[iPart] ) );
+        // (assumes N_VARIABLES==N_PARTS, for now)
+    }
+    return tp;
 }
 
 // -----------------------------------------------------------------------------------
@@ -236,30 +259,9 @@ function draw(canvas) {
     context.strokeStyle = 'black';
     context.stroke();
     
-    // draw each truck as a rectangle
+    // draw each part
     for( var i = 0; i < N_VARIABLES; i++ ) {
-        context.beginPath();
-        var r = getTruckRect(i);
-        var a = projectAreaToScreen( new Point( r.x, r.y ) );
-        var b = projectAreaToScreen( new Point( r.x + r.w, r.y + r.h) );
-        context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
-        if( i == iDriver ) {
-            if( currentMousePositionAccepted )
-                context.fillStyle = 'limegreen';
-            else
-                context.fillStyle = 'red';
-        }
-        else
-            context.fillStyle = 'grey';
-        context.fill();
-        context.lineWidth = 1;
-        context.strokeStyle = 'black';
-        context.stroke();
-        
-        context.font = "30px Arial";
-        context.textAlign = "center";
-        context.fillStyle = "black";
-        context.fillText( getPartLabel(i), (a.x+b.x)/2, (a.y+b.y)/2+10 );
+        drawPart( i );
     }
     
     // plot
@@ -297,6 +299,38 @@ function draw(canvas) {
             }
         }
     }
+}
+
+function drawPart( i ) {
+    var poly = getTransformedPart( i );
+    context.beginPath();
+    if( i == iDriver ) {
+        if( currentMousePositionAccepted )
+            context.fillStyle = 'limegreen';
+        else
+            context.fillStyle = 'red';
+    }
+    else
+        context.fillStyle = 'grey';
+    for( var iPt = 0; iPt < poly.length; iPt++ ) {
+        var p = projectAreaToScreen( poly[ iPt ] );
+        if( iPt == 0)
+            context.moveTo( p.x, p.y );
+        else
+            context.lineTo( p.x, p.y );
+    }
+    context.closePath();
+    context.fill();
+    context.lineWidth = 1;
+    context.strokeStyle = 'black';
+    context.stroke();
+    
+    context.font = "30px Arial";
+    context.textAlign = "center";
+    context.fillStyle = "black";
+    var cp = applyTransform( new Point( 0, 0 ), transforms[i], variables[i] );
+    var scp = projectAreaToScreen( cp );
+    context.fillText( getPartLabel(i), scp.x, scp.y+10 );
 }
 
 // -----------------------------------------------------------------------------------
@@ -657,6 +691,35 @@ function Constraint(s,cp,cn) {
     this.segment = s;
     this.connected_to_previous = cp;
     this.connected_to_next = cn;
+}
+
+// -----------------------------------------------------------------------------------
+
+function pointInPolygon(poly, pt)
+{
+    var i, j;
+    var c = false;
+    var nvert = poly.length;
+    for (i = 0, j = nvert-1; i < nvert; j = i++) {
+        if ( ((poly[i].y>pt.y) != (poly[j].y>pt.y)) && 
+             (pt.x < (poly[j].x-poly[i].x) * (pt.y-poly[i].y) / (poly[j].y-poly[i].y) + poly[i].x) )
+            c = !c;
+    }
+    return c;
+}
+
+// -----------------------------------------------------------------------------------
+
+function applyTransform( p, transform, amount ) {
+    return add( rotate( p, transform.start_rotation + amount*transform.rotation ), 
+        add( transform.start_translation, mul( transform.translation, amount ) ) );
+}
+
+// -----------------------------------------------------------------------------------
+
+function rotate( p, theta ) {
+    return new Point( Math.cos(theta)*p.x - Math.sin(theta)*p.y, 
+                      Math.sin(theta)*p.x + Math.cos(theta)*p.y );
 }
 
 // -----------------------------------------------------------------------------------
