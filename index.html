@@ -275,7 +275,7 @@ function draw(canvas) {
         context.fillStyle = 'white';
         context.fill();
         // label the axes
-        var horiz_axis_label_pos = projectPlotToScreen( new Point( area_width/2, area_width ), iPlotConnection );
+        var horiz_axis_label_pos = projectPlotToScreen( new Point( area_width/2, 0 ), iPlotConnection );
         var vert_axis_label_pos = projectPlotToScreen( new Point( 0, area_width/2 ), iPlotConnection );
         context.font = "12px Arial";
         context.textAlign = "center";
@@ -300,6 +300,8 @@ function draw(canvas) {
         }
     }
 }
+
+// -----------------------------------------------------------------------------------
 
 function drawPart( i ) {
     var poly = getTransformedPart( i );
