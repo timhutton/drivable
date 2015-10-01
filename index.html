@@ -292,18 +292,32 @@ function draw(canvas) {
         for( var iSegmentGroup = 0; iSegmentGroup < connection.connected_segments.length; iSegmentGroup++) {
             var segment_group = connection.connected_segments[ iSegmentGroup ];
             for( var iSegment = 0; iSegment < segment_group.constraints.length; iSegment++) {
-                var segment = segment_group.constraints[iSegment].segment;
-                context.beginPath();
-                var a = projectPlotToScreen( segment.p1, iPlotConnection );
-                var b = projectPlotToScreen( segment.p2, iPlotConnection );
-                context.moveTo( a.x, a.y);
-                context.lineTo( b.x, b.y );
-                context.lineWidth = 1;
-                context.strokeStyle = 'black';
-                context.stroke();
+                var constraint = segment_group.constraints[iSegment].segment;
+                drawConstraint( constraint, iPlotConnection );
             }
         }
     }
+}
+
+// -----------------------------------------------------------------------------------
+
+function drawConstraint( constraint, iPlotConnection ) {
+    var a = projectPlotToScreen( constraint.p1, iPlotConnection );
+    var b = projectPlotToScreen( constraint.p2, iPlotConnection );
+    context.beginPath();
+    context.moveTo( a.x, a.y );
+    context.lineTo( b.x, b.y );
+    context.lineWidth = 1;
+    context.strokeStyle = 'black';
+    context.stroke();
+    var d = 8;
+    var n = norm( perp( sub( b, a ) ) );
+    context.beginPath();
+    context.moveTo( a.x+n.x*d/2, a.y+n.y*d/2 );
+    context.lineTo( b.x+n.x*d/2, b.y+n.y*d/2 );
+    context.lineWidth = d;
+    context.strokeStyle = 'rgba(0,0,0,0.1)';
+    context.stroke();
 }
 
 // -----------------------------------------------------------------------------------
