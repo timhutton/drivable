@@ -47,7 +47,7 @@ var margin = 20; // pixels
 
 var canvas = document.getElementById('myCanvas');
 var context = canvas.getContext('2d');
-var iDriver = -1; // -1 means nothing is currently the driver
+var iDrivenVariable = -1;
 var currentMousePositionAccepted = true;
 var grabPos = null;
 
@@ -195,7 +195,7 @@ canvas.addEventListener('mousedown', function(evt) {
     var areaPos = projectScreenToArea( mousePos );
     for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
         if( pointInPolygon( getTransformedPart( iPart ), areaPos ) ) {
-            iDriver = iPart;
+            iDrivenVariable = parts[ iPart ].variables_that_affect_us[0]; // TODO: how can the user select other variables to drive?
             grabPos = areaPos;
             draw(canvas);
             return;
@@ -218,7 +218,7 @@ canvas.addEventListener('mousedown', function(evt) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mousemove', function(evt) {
-    if( iDriver < 0 ) return;
+    if( iDrivenVariable < 0 ) return;
     var mousePos = getMousePos(canvas, evt);
     var areaPos = projectScreenToArea( mousePos );
     currentMousePositionAccepted = tryMoveDriver( grabPos, areaPos );
@@ -233,7 +233,7 @@ canvas.addEventListener('mousemove', function(evt) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mouseup', function(evt) {
-    iDriver = -1;
+    iDrivenVariable = -1;
     draw(canvas);
 }, false);
 
@@ -347,8 +347,10 @@ function draw(canvas) {
 // -----------------------------------------------------------------------------------
 
 function drawPart( iPart ) {
+    var part = parts[ iPart ];
+    
     var poly = getTransformedPart( iPart );
-    if( iPart == iDriver ) {
+    if( part.variables_that_affect_us.indexOf( iDrivenVariable ) >= 0 ) {
         if( currentMousePositionAccepted )
             context.fillStyle = 'limegreen';
         else
@@ -374,7 +376,6 @@ function drawPart( iPart ) {
     context.textAlign = "center";
     context.fillStyle = "black";
     context.textBaseline="middle"; 
-    var part = parts[ iPart ];
     var cp = applyTransform( new Point( 0, 0 ), part.transform, 1 );
     for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
         var iVariable = part.variables_that_affect_us[ iiVariable ];
@@ -413,11 +414,11 @@ function drawConstraint( constraint, iPlotConnection ) {
 
 // return true if we were able to perform the whole move
 function tryMoveDriver( grabPos, mousePos ) {
-    var new_value = variables[ iDriver ].value + mousePos.x - grabPos.x; // TODO: generalize to the variable's transform
+    var new_value = variables[ iDrivenVariable ].value + mousePos.x - grabPos.x; // TODO: generalize to the variable's transform
     var moved = new Array( N_VARIABLES );
     for( var i = 0; i < N_VARIABLES; i++ )
         moved[ i ] = false;
-    return tryChangeVariable( iDriver, new_value, moved );
+    return tryChangeVariable( iDrivenVariable, new_value, moved );
 }
 
 // -----------------------------------------------------------------------------------
