@@ -102,7 +102,9 @@ function initWithTrucks( numTrucksWanted ) {
         var transform = new Transform( 0, new Point(1,0) );
         var iPart = iVariable;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
-        variables[iVariable] = new Variable( label, iPart, initial_value, transform );
+        var min_value = 0;
+        var max_value = area_width;
+        variables[iVariable] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
     }    
 
     N_CONNECTIONS = N_PARTS-1;
@@ -183,11 +185,13 @@ function Transform( rotation, translation ) {
  
 // -----------------------------------------------------------------------------------
 
-function Variable( label, iPart, initial_value, transform ) {
+function Variable( label, iPart, initial_value, transform, min_value, max_value ) {
     this.label = label;
     this.iPart = iPart;
     this.value = initial_value;
     this.transform = transform;
+    this.min_value = min_value;
+    this.max_value = max_value;
 }
 
 // -----------------------------------------------------------------------------------
@@ -201,7 +205,7 @@ canvas.addEventListener('mousedown', function(evt) {
     if( iVariable >= 0 ) {
         iDrivenVariable = iVariable;
         grabPos = areaPos;
-        draw(canvas);
+        draw();
         return;
     }
     // if on a plot then set those variables directly
@@ -212,7 +216,7 @@ canvas.addEventListener('mousedown', function(evt) {
             var connection = connections[ iPlotConnection ];
             variables[ connection.a ].value = plotPos.x;
             variables[ connection.b ].value = plotPos.y;
-            draw(canvas);
+            draw();
             return;
         }
     }
@@ -221,24 +225,34 @@ canvas.addEventListener('mousedown', function(evt) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mousemove', function(evt) {
-    if( iDrivenVariable < 0 ) return;
     var mousePos = getMousePos(canvas, evt);
     var areaPos = projectScreenToArea( mousePos );
-    currentMousePositionAccepted = tryMoveDriver( grabPos, areaPos );
-    if( currentMousePositionAccepted ) {
-        grabPos = areaPos;
-        // TODO: this is not quite right - the truck might have moved a little even if was blocked from going the whole way
-        //       result is slight cursor drift from the attachment point
+    if( isMouseDown ) {
+        if( iDrivenVariable < 0 ) return;
+        currentMousePositionAccepted = tryMoveDriver( grabPos, areaPos );
+        if( currentMousePositionAccepted ) {
+            grabPos = areaPos;
+            // TODO: this is not quite right - the truck might have moved a little even if was blocked from going the whole way
+            //       result is slight cursor drift from the attachment point
+        }
+        draw();
     }
-    draw(canvas);
+    else {
+        iDrivenVariable = getVariableHandleByAreaPos( areaPos );
+        currentMousePositionAccepted = true;
+        draw();
+    }
+    if( iDrivenVariable >= 0 ) {
+        drawVariableHandle( iDrivenVariable, areaPos );
+    }
 }, false);
 
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mouseup', function(evt) {
-    isMouseDown = true;
-    iDrivenVariable = -1;
-    draw(canvas);
+    isMouseDown = false;
+    currentMousePositionAccepted = true;
+    draw();
 }, false);
 
 // -----------------------------------------------------------------------------------
@@ -296,9 +310,7 @@ function projectScreenToPlot( p, i ) {
 
 // -----------------------------------------------------------------------------------
 
-function draw(canvas) {
-    var context = canvas.getContext('2d');
-
+function draw() {
     // show the limit of the canvas itself
     context.beginPath();
     context.rect(0, 0, canvas.width, canvas.height);
@@ -317,10 +329,10 @@ function draw(canvas) {
     context.stroke();
     
     // draw each part
-    for( var i = 0; i < N_VARIABLES; i++ ) {
-        drawPart( i );
+    for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
+        drawPart( iPart );
     }
-    
+
     // plot
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
         var connection = connections[ iPlotConnection ];
@@ -413,6 +425,42 @@ function drawPart( iPart ) {
     }
     var scp = projectAreaToScreen( cp );
     context.fillText( part.label, scp.x, scp.y );
+}
+
+// -----------------------------------------------------------------------------------
+
+function drawVariableHandle( iVariable, areaPos ) {
+    var variable = variables[ iVariable ];
+
+    // TODO: cope when transform is rotation
+    var p1 = sub( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
+    var p2 = add( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
+    var sp = projectAreaToScreen( areaPos );
+    var sp1 = projectAreaToScreen( p1 );
+    var sp2 = projectAreaToScreen( p2 );
+    
+    context.lineWidth = 1;
+    context.strokeStyle = 'black';
+    drawArrow( sp, sp1 );
+    drawArrow( sp, sp2 );
+}
+
+// -----------------------------------------------------------------------------------
+
+function drawArrow( from, to ) {
+    var headlen = 10; // length of head in pixels
+    var angle = Math.atan2(to.y-from.y,to.x-from.x);
+
+    context.beginPath();
+    context.moveTo(from.x, from.y);
+    context.lineTo(to.x, to.y);
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(to.x-headlen*Math.cos(angle-Math.PI/6),to.y-headlen*Math.sin(angle-Math.PI/6));
+    context.lineTo(to.x, to.y);
+    context.lineTo(to.x-headlen*Math.cos(angle+Math.PI/6),to.y-headlen*Math.sin(angle+Math.PI/6));
+    context.stroke();
 }
 
 // -----------------------------------------------------------------------------------
