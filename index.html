@@ -421,16 +421,20 @@ function drawPart( iPart ) {
 
 function applyPartTransform( iPart, p ) {
     var part = parts[ iPart ];
-    // first apply the initial rotation
+    // first apply the rotations
     var cp = rotate( p, part.transform.rotation );
-    // then apply the transforms of the variables that affect this point
     for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
         var iVariable = part.variables_that_affect_us[ iiVariable ];
         var variable = variables[ iVariable ];
-        cp = applyTransform( cp, variable.transform, variable.value );
+        cp = rotate( cp, variable.transform.rotation * variable.value );
     }
-    // then apply the initial translation
+    // then apply translations
     cp = add( cp, part.transform.translation );
+    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
+        var iVariable = part.variables_that_affect_us[ iiVariable ];
+        var variable = variables[ iVariable ];
+        cp = add( cp, mul( variable.transform.translation, variable.value ) );
+    }
     return cp;
 }
 
@@ -439,18 +443,30 @@ function applyPartTransform( iPart, p ) {
 function drawVariableHandle( iVariable, areaPos ) {
     if( iVariable < 0 ) return;
     var variable = variables[ iVariable ];
-
-    // TODO: cope when transform is rotation
-    var p1 = sub( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
-    var p2 = add( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
-    var sp = projectAreaToScreen( areaPos );
-    var sp1 = projectAreaToScreen( p1 );
-    var sp2 = projectAreaToScreen( p2 );
     
     context.lineWidth = 1;
     context.strokeStyle = 'black';
-    drawArrow( sp, sp1 );
-    drawArrow( sp, sp2 );
+
+    if( Math.abs( variable.transform.rotation ) > 0 ) {
+        var cp = applyPartTransform( variable.iPart, new Point( 0, 0 ) );
+        var scp = projectAreaToScreen( cp );
+        context.beginPath();
+        var radius = Math.max( 20, len( sub( areaPos, cp ) ) );
+        context.arc( scp.x, scp.y, radius, 0, 1.8*Math.PI );
+        context.stroke();
+        // TODO: only show a short length of arc, to either side of the cursor
+        // TODO: add arrowheads
+    }
+    else {
+        var p1 = sub( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
+        var p2 = add( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
+        var sp = projectAreaToScreen( areaPos );
+        var sp1 = projectAreaToScreen( p1 );
+        var sp2 = projectAreaToScreen( p2 );
+        
+        drawArrow( sp, sp1 );
+        drawArrow( sp, sp2 );
+    }
 }
 
 // -----------------------------------------------------------------------------------
