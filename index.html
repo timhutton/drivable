@@ -206,6 +206,7 @@ canvas.addEventListener('mousedown', function(evt) {
         iDrivenVariable = iVariable;
         grabPos = areaPos;
         draw();
+        drawVariableHandle( iDrivenVariable, areaPos );
         return;
     }
     // if on a plot then set those variables directly
@@ -235,16 +236,13 @@ canvas.addEventListener('mousemove', function(evt) {
             // TODO: this is not quite right - the truck might have moved a little even if was blocked from going the whole way
             //       result is slight cursor drift from the attachment point
         }
-        draw();
     }
     else {
         iDrivenVariable = getVariableHandleByAreaPos( areaPos );
         currentMousePositionAccepted = true;
-        draw();
     }
-    if( iDrivenVariable >= 0 ) {
-        drawVariableHandle( iDrivenVariable, areaPos );
-    }
+    draw();
+    drawVariableHandle( iDrivenVariable, areaPos );
 }, false);
 
 // -----------------------------------------------------------------------------------
@@ -252,7 +250,11 @@ canvas.addEventListener('mousemove', function(evt) {
 canvas.addEventListener('mouseup', function(evt) {
     isMouseDown = false;
     currentMousePositionAccepted = true;
+    var mousePos = getMousePos(canvas, evt);
+    var areaPos = projectScreenToArea( mousePos );
+    iDrivenVariable = getVariableHandleByAreaPos( areaPos );
     draw();
+    drawVariableHandle( iDrivenVariable, areaPos );
 }, false);
 
 // -----------------------------------------------------------------------------------
@@ -271,13 +273,7 @@ function getTransformedPart( iPart ) {
     var tp = [];
     var part = parts[ iPart ];
     for( var iPt = 0; iPt < part.poly.length; iPt++ ) {
-        var p = applyTransform( part.poly[iPt], part.transform, 1 );
-        for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
-            var iVariable = part.variables_that_affect_us[ iiVariable ];
-            var variable = variables[ iVariable ];
-            p = applyTransform( p, variable.transform, variable.value );
-        }
-        tp.push( p );
+        tp.push( applyPartTransform( iPart, part.poly[iPt] ) );
     }
     return tp;
 }
@@ -417,19 +413,31 @@ function drawPart( iPart ) {
     context.textAlign = "center";
     context.fillStyle = "black";
     context.textBaseline="middle"; 
-    var cp = applyTransform( new Point( 0, 0 ), part.transform, 1 );
-    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
-        var iVariable = part.variables_that_affect_us[ iiVariable ];
-        var variable = variables[ iVariable ];
-        cp = applyTransform( cp, variable.transform, variable.value );
-    }
-    var scp = projectAreaToScreen( cp );
+    var scp = projectAreaToScreen( applyPartTransform( iPart, new Point( 0, 0 ) ) );
     context.fillText( part.label, scp.x, scp.y );
 }
 
 // -----------------------------------------------------------------------------------
 
+function applyPartTransform( iPart, p ) {
+    var part = parts[ iPart ];
+    // first apply the initial rotation
+    var cp = rotate( p, part.transform.rotation );
+    // then apply the transforms of the variables that affect this point
+    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
+        var iVariable = part.variables_that_affect_us[ iiVariable ];
+        var variable = variables[ iVariable ];
+        cp = applyTransform( cp, variable.transform, variable.value );
+    }
+    // then apply the initial translation
+    cp = add( cp, part.transform.translation );
+    return cp;
+}
+
+// -----------------------------------------------------------------------------------
+
 function drawVariableHandle( iVariable, areaPos ) {
+    if( iVariable < 0 ) return;
     var variable = variables[ iVariable ];
 
     // TODO: cope when transform is rotation
