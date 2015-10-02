@@ -57,7 +57,6 @@ var N_VARIABLES = null;
 var parts = null;
 var connections = null;
 var variables = null;
-var transforms = null;
 var plot_scale = null;
 
 var CollisionOutcome = {
@@ -84,25 +83,24 @@ function initWithTrucks( numTrucksWanted ) {
     N_VARIABLES = numTrucksWanted;
     N_PARTS = N_VARIABLES; // (for now each part has a single degree of freedom)
 
-    variables = new Array(N_VARIABLES);
-    for( var i = 0; i < N_VARIABLES; i++ ) {
-        variables[i] = (i+1) * area_width / (N_PARTS+1);
-    }    
-
     // each part is a polygon, centered at its rotation point
     parts = new Array( N_PARTS );
     for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
         var poly = [ new Point(-truck_width/2,-truck_height/2), new Point(truck_width/2,-truck_height/2),
-                     new Point(truck_width/2,truck_height/2), new Point(-truck_width/2,truck_height/2) ];
-        var transform = new Transform( 0, new Point(0,truck_top) );
+                     new Point(truck_width/2,truck_height/2),   new Point(-truck_width/2,truck_height/2) ];
+        var initial_transform = new Transform( 0, new Point(0,truck_top) );
         var label = String.fromCharCode(65+iPart);
-        parts[iPart] = new Part( label, poly, transform );
+        parts[iPart] = new Part( label, poly, initial_transform );
     }
 
-    transforms = new Array(N_VARIABLES);
-    for( var i = 0; i < N_VARIABLES; i++ ) {
-        transforms[i] = new Transform( 0, new Point(1,0) );
-    }
+    // each variable applies to a part, and transforms it in some way
+    variables = new Array(N_VARIABLES);
+    for( var iVariable = 0; iVariable < N_VARIABLES; iVariable++ ) {
+        var iPart = iVariable;
+        var initial_value = (iVariable+1) * area_width / (N_PARTS+1);
+        var transform = new Transform( 0, new Point(1,0) );
+        variables[iVariable] = new Variable( initial_value, transform );
+    }    
 
     N_CONNECTIONS = N_PARTS-1;
     plot_scale = ( canvas.height - margin*(N_CONNECTIONS+1) ) / ( area_width * N_CONNECTIONS );
@@ -170,6 +168,7 @@ function Part( label, poly, transform ) {
     this.label = label;
     this.poly = poly;
     this.transform = transform;
+    // TODO: say which variables affect this part
  }
  
 // -----------------------------------------------------------------------------------
@@ -178,6 +177,14 @@ function Transform( rotation, translation ) {
     this.rotation = rotation;
     this.translation = translation;
  }
+ 
+// -----------------------------------------------------------------------------------
+
+function Variable( value, transform ) {
+    this.value = value;
+    this.transform = transform;
+    // TODO: say which part this variable affects
+}
 
 // -----------------------------------------------------------------------------------
 
@@ -199,8 +206,8 @@ canvas.addEventListener('mousedown', function(evt) {
         if( pointInRect( plotPos, {x:0,y:0,w:area_width,h:area_width} ) )
         {
             var connection = connections[ iPlotConnection ];
-            variables[ connection.a ] = plotPos.x;
-            variables[ connection.b ] = plotPos.y;
+            variables[ connection.a ].value = plotPos.x;
+            variables[ connection.b ].value = plotPos.y;
             draw(canvas);
             return;
         }
@@ -236,7 +243,7 @@ function getTransformedPart( iPart ) {
     for( var iPt = 0; iPt < parts[iPart].poly.length; iPt++ ) {
         var p = applyTransform( parts[iPart].poly[iPt], parts[iPart].transform, 1 );
         var iVariable = iPart; // TODO: for each variable that applies to this part (one-to-one for now)
-        var p2 = applyTransform( p, transforms[iVariable], variables[iVariable] );
+        var p2 = applyTransform( p, variables[iVariable].transform, variables[iVariable].value );
         tp.push( p2 );
     }
     return tp;
@@ -317,7 +324,7 @@ function draw(canvas) {
         context.fillText( parts[ iPartB ].label, vert_axis_label_pos.x, vert_axis_label_pos.y );
         // draw the current state as a blue dot
         var connection = connections[iPlotConnection];
-        var p = new Point( variables[connection.a], variables[connection.b] );
+        var p = new Point( variables[connection.a].value, variables[connection.b].value );
         var pp = projectPlotToScreen( p, iPlotConnection );
         context.beginPath();
         context.arc(pp.x, pp.y, 3, 0, 2*Math.PI);
@@ -366,7 +373,7 @@ function drawPart( iPart ) {
     context.textBaseline="middle"; 
     var cp = applyTransform( new Point( 0, 0 ), parts[ iPart ].transform, 1 );
     var iVariable = iPart; // (for now)
-    var cp2 = applyTransform( cp, transforms[ iVariable ], variables[ iVariable ] );
+    var cp2 = applyTransform( cp, variables[ iVariable ].transform, variables[ iVariable ].value );
     var scp = projectAreaToScreen( cp2 );
     context.fillText( parts[ iPart ].label, scp.x, scp.y );
 }
@@ -399,7 +406,7 @@ function drawConstraint( constraint, iPlotConnection ) {
 
 // return true if we were able to perform the whole move
 function tryMoveDriver( grabPos, mousePos ) {
-    var new_value = variables[ iDriver ] + mousePos.x - grabPos.x; // (for now, specific to horizontal trucks)
+    var new_value = variables[ iDriver ].value + mousePos.x - grabPos.x; // (for now, specific to horizontal trucks)
     var moved = new Array( N_VARIABLES );
     for( var i = 0; i < N_VARIABLES; i++ )
         moved[ i ] = false;
@@ -417,31 +424,31 @@ function tryChangeVariable( iVariable, new_value, moved ) {
         var cr = findFirstConstraintCollision( iVariable, new_value, moved );
         // if none then there's nothing in the way, so we don't need to check any further
         if( cr.outcome == CollisionOutcome.MISS ) {
-            variables[ iVariable ] = new_value;
+            variables[ iVariable ].value = new_value;
             return true;
         }
         // if friction jam then we can stop immediately, with no knock-on effects
         if( cr.outcome == CollisionOutcome.FRICTION_JAM ) {
-            variables[ iVariable ] = cr.isA ? cr.firstContact.x : cr.firstContact.y;
+            variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
             return false;
         }
         // else this move has caused a slide (to end of constraint or partial) which
         // drives another variable. So we need to recurse down to check if we can change *that* variable.
-        var old_other_value = variables[ cr.iOtherVariable ];
+        var old_other_value = variables[ cr.iOtherVariable ].value;
         var new_other_value = cr.isA ? cr.slideTo.y : cr.slideTo.x;
         moved[ iVariable ] = true;
         var ok = tryChangeVariable( cr.iOtherVariable, new_other_value, moved );
         if( !ok ) {
             // one of the other parts jammed somewhere along the slide - but where?
             // can we just inspect the other variable to see how far it got?
-            //variables[ iVariable ] += ( new_value - variables[ iVariable ] ) * ( variables[ cr.iOtherVariable ] - old_other_value ) / ( new_other_value - old_other_value );
+            //variables[ iVariable ].value += ( new_value - variables[ iVariable ].value ) * ( variables[ cr.iOtherVariable ].value - old_other_value ) / ( new_other_value - old_other_value );
             // or just move this part as far as we know is safe?
-            variables[ iVariable ] = cr.isA ? cr.firstContact.x : cr.firstContact.y;
+            variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
             // (this is OK for now - might take another little push to make full contact)
             // (or do we need to return something from the tryChangeVariable function somehow?)
             return false; 
         }
-        variables[ iVariable ] = cr.isA ? cr.slideTo.x : cr.slideTo.y;
+        variables[ iVariable ].value = cr.isA ? cr.slideTo.x : cr.slideTo.y;
         if( cr.outcome == CollisionOutcome.SLIDE_TO_CORNER_JAM || cr.outcome == CollisionOutcome.SLIDE_TO_FRICTION_JAM ) {
             // we slid on this constraint without subsequent problems but now we can go no further
             return false;
@@ -477,13 +484,13 @@ function findFirstConstraintCollision( iVariable, new_value, moved ) {
         {
             isA = true;
             iOtherVariable = connection.b;
-            move = new LineSegment( new Point( variables[ iVariable ], variables[ iOtherVariable ] ), new Point( new_value, variables[ iOtherVariable ] ) );
+            move = new LineSegment( new Point( variables[ iVariable ].value, variables[ iOtherVariable ].value ), new Point( new_value, variables[ iOtherVariable ].value ) );
         }
         else if( connection.b == iVariable && !moved[ connection.a ] )
         {
             isA = false;
             iOtherVariable = connection.a;
-            move = new LineSegment( new Point( variables[ iOtherVariable ], variables[ iVariable ] ), new Point( variables[ iOtherVariable ], new_value ) );
+            move = new LineSegment( new Point( variables[ iOtherVariable ].value, variables[ iVariable ].value ), new Point( variables[ iOtherVariable ].value, new_value ) );
         }
         else {
             continue;
