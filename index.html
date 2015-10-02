@@ -50,6 +50,7 @@ var context = canvas.getContext('2d');
 var iDrivenVariable = -1;
 var currentMousePositionAccepted = true;
 var grabPos = null;
+var isMouseDown = false;
 
 var N_PARTS = null;
 var N_CONNECTIONS = null;
@@ -101,7 +102,7 @@ function initWithTrucks( numTrucksWanted ) {
         var transform = new Transform( 0, new Point(1,0) );
         var iPart = iVariable;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
-        variables[iVariable] = new Variable( label, initial_value, transform );
+        variables[iVariable] = new Variable( label, iPart, initial_value, transform );
     }    
 
     N_CONNECTIONS = N_PARTS-1;
@@ -182,8 +183,9 @@ function Transform( rotation, translation ) {
  
 // -----------------------------------------------------------------------------------
 
-function Variable( label, initial_value, transform ) {
+function Variable( label, iPart, initial_value, transform ) {
     this.label = label;
+    this.iPart = iPart;
     this.value = initial_value;
     this.transform = transform;
 }
@@ -191,16 +193,16 @@ function Variable( label, initial_value, transform ) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mousedown', function(evt) {
+    isMouseDown = true;
     var mousePos = getMousePos(canvas, evt);
     // if within a shape then make it the driver
     var areaPos = projectScreenToArea( mousePos );
-    for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
-        if( pointInPolygon( getTransformedPart( iPart ), areaPos ) ) {
-            iDrivenVariable = parts[ iPart ].variables_that_affect_us[0]; // TODO: how can the user select other variables to drive?
-            grabPos = areaPos;
-            draw(canvas);
-            return;
-        }
+    var iVariable = getVariableHandleByAreaPos( areaPos );
+    if( iVariable >= 0 ) {
+        iDrivenVariable = iVariable;
+        grabPos = areaPos;
+        draw(canvas);
+        return;
     }
     // if on a plot then set those variables directly
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
@@ -234,16 +236,27 @@ canvas.addEventListener('mousemove', function(evt) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mouseup', function(evt) {
+    isMouseDown = true;
     iDrivenVariable = -1;
     draw(canvas);
 }, false);
 
 // -----------------------------------------------------------------------------------
 
+function getVariableHandleByAreaPos( areaPos ) {
+    for( var iVariable = 0; iVariable < N_VARIABLES; iVariable++ ) {
+        if( pointInPolygon( getTransformedPart( variables[ iVariable ].iPart ), areaPos ) )
+            return iVariable;
+    }
+    return -1;
+}
+
+// -----------------------------------------------------------------------------------
+
 function getTransformedPart( iPart ) {
     var tp = [];
     var part = parts[ iPart ];
-    for( var iPt = 0; iPt < parts[iPart].poly.length; iPt++ ) {
+    for( var iPt = 0; iPt < part.poly.length; iPt++ ) {
         var p = applyTransform( part.poly[iPt], part.transform, 1 );
         for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
             var iVariable = part.variables_that_affect_us[ iiVariable ];
@@ -377,7 +390,7 @@ function drawPart( iPart ) {
     context.beginPath();
     for( var iPt = 0; iPt < poly.length; iPt++ ) {
         var p = projectAreaToScreen( poly[ iPt ] );
-        if( iPt == 0)
+        if( iPt == 0 )
             context.moveTo( p.x, p.y );
         else
             context.lineTo( p.x, p.y );
