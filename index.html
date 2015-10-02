@@ -100,7 +100,8 @@ function initWithTrucks( numTrucksWanted ) {
         var initial_value = (iVariable+1) * area_width / (N_PARTS+1);
         var transform = new Transform( 0, new Point(1,0) );
         var iPart = iVariable;
-        variables[iVariable] = new Variable( parts[ iPart ].label, initial_value, transform );
+        var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
+        variables[iVariable] = new Variable( label, initial_value, transform );
     }    
 
     N_CONNECTIONS = N_PARTS-1;
@@ -322,8 +323,23 @@ function draw(canvas) {
         var vert_axis_label_pos = projectPlotToScreen( new Point( 0, area_width/2 ), iPlotConnection );
         context.font = "12px Arial";
         context.textAlign = "center";
-        context.fillStyle = "black";
+        if( connection.a == iDrivenVariable ) {
+            if( currentMousePositionAccepted )
+                context.fillStyle = 'limegreen';
+            else
+                context.fillStyle = 'red';
+        }
+        else
+            context.fillStyle = "black";
         context.fillText( variables[ connection.a ].label, horiz_axis_label_pos.x, horiz_axis_label_pos.y );
+        if( connection.b == iDrivenVariable ) {
+            if( currentMousePositionAccepted )
+                context.fillStyle = 'limegreen';
+            else
+                context.fillStyle = 'red';
+        }
+        else
+            context.fillStyle = "black";
         context.fillText( variables[ connection.b ].label, vert_axis_label_pos.x, vert_axis_label_pos.y );
         // draw the current state as a blue dot
         var connection = connections[iPlotConnection];
