@@ -49,26 +49,24 @@ var margin = 20; // pixels
 var N_VARIABLES = 5; // change this to add more trucks!
 var N_PARTS = N_VARIABLES; // (for now each part has a single degree of freedom)
 
-// each part is a polygon, centered at its rotation point
-var parts = new Array( N_PARTS );
-for( var i = 0; i < N_PARTS; i++ ) {
-    parts[i] = [ new Point(-truck_width/2,-truck_height/2), new Point(truck_width/2,-truck_height/2),
-                 new Point(truck_width/2,truck_height/2), new Point(-truck_width/2,truck_height/2) ];
-}
-
-var transforms = new Array(N_VARIABLES);
-for( var i = 0; i < N_VARIABLES; i++ ) {
-    // each part is rotated around its origin before being translated
-    transforms[i] = { start_rotation:0, 
-                      rotation:0, 
-                      start_translation:new Point(0,truck_top), 
-                      translation:new Point(1,0) };
-}
-
 var variables = new Array(N_VARIABLES);
 for( var i = 0; i < N_VARIABLES; i++ ) {
     variables[i] = (i+1) * area_width / (N_PARTS+1);
 }    
+
+// each part is a polygon, centered at its rotation point
+var parts = new Array( N_PARTS );
+for( var i = 0; i < N_PARTS; i++ ) {
+    var poly = [ new Point(-truck_width/2,-truck_height/2), new Point(truck_width/2,-truck_height/2),
+                 new Point(truck_width/2,truck_height/2), new Point(-truck_width/2,truck_height/2) ];
+    var transform = new Transform( 0, new Point(0,truck_top) );
+    parts[i] = new Part( poly, transform );
+}
+
+var transforms = new Array(N_VARIABLES);
+for( var i = 0; i < N_VARIABLES; i++ ) {
+    transforms[i] = new Transform( 0, new Point(1,0) );
+}
 
 var N_CONNECTIONS = N_PARTS-1;
 var plot_scale = ( canvas.height - margin*(N_CONNECTIONS+1) ) / ( area_width * N_CONNECTIONS );
@@ -146,6 +144,20 @@ draw(canvas);
 
 // -----------------------------------------------------------------------------------
 
+function Part( poly, transform ) {
+    this.poly = poly;
+    this.transform = transform;
+ }
+ 
+// -----------------------------------------------------------------------------------
+
+function Transform( rotation, translation ) {
+    this.rotation = rotation;
+    this.translation = translation;
+ }
+
+// -----------------------------------------------------------------------------------
+
 canvas.addEventListener('mousedown', function(evt) {
     var mousePos = getMousePos(canvas, evt);
     // if within a shape then make it the driver
@@ -198,9 +210,11 @@ canvas.addEventListener('mouseup', function(evt) {
 
 function getTransformedPart( iPart ) {
     var tp = [];
-    for( var i = 0; i < parts[iPart].length; i++ ) {
-        tp.push( applyTransform( parts[iPart][i], transforms[iPart], variables[iPart] ) );
-        // (assumes N_VARIABLES==N_PARTS, for now)
+    for( var iPt = 0; iPt < parts[iPart].poly.length; iPt++ ) {
+        var p = applyTransform( parts[iPart].poly[iPt], parts[iPart].transform, 1 );
+        var iVariable = iPart; // TODO: for each variable that applies to this part (one-to-one for now)
+        var p2 = applyTransform( p, transforms[iVariable], variables[iVariable] );
+        tp.push( p2 );
     }
     return tp;
 }
@@ -303,10 +317,10 @@ function draw(canvas) {
 
 // -----------------------------------------------------------------------------------
 
-function drawPart( i ) {
-    var poly = getTransformedPart( i );
+function drawPart( iPart ) {
+    var poly = getTransformedPart( iPart );
     context.beginPath();
-    if( i == iDriver ) {
+    if( iPart == iDriver ) {
         if( currentMousePositionAccepted )
             context.fillStyle = 'limegreen';
         else
@@ -330,9 +344,11 @@ function drawPart( i ) {
     context.font = "30px Arial";
     context.textAlign = "center";
     context.fillStyle = "black";
-    var cp = applyTransform( new Point( 0, 0 ), transforms[i], variables[i] );
-    var scp = projectAreaToScreen( cp );
-    context.fillText( getPartLabel(i), scp.x, scp.y+10 );
+    var cp = applyTransform( new Point( 0, 0 ), parts[iPart].transform, 1 );
+    var iVariable = iPart; // (for now)
+    var cp2 = applyTransform( cp, transforms[ iVariable ], variables[ iVariable ] );
+    var scp = projectAreaToScreen( cp2 );
+    context.fillText( getPartLabel( iPart ), scp.x, scp.y+10 );
 }
 
 // -----------------------------------------------------------------------------------
@@ -713,8 +729,7 @@ function pointInPolygon(poly, pt)
 // -----------------------------------------------------------------------------------
 
 function applyTransform( p, transform, amount ) {
-    return add( rotate( p, transform.start_rotation + amount*transform.rotation ), 
-        add( transform.start_translation, mul( transform.translation, amount ) ) );
+    return add( rotate( p, amount*transform.rotation ), mul( transform.translation, amount ) );
 }
 
 // -----------------------------------------------------------------------------------
