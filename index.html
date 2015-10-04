@@ -72,7 +72,66 @@ var CollisionOutcome = {
 // -----------------------------------------------------------------------------------
 
 initWithTrucks(5);
+//initWithTest();
 draw(canvas);
+
+// -----------------------------------------------------------------------------------
+
+function initWithTest() {
+    N_VARIABLES = 2;
+    N_PARTS = 2;
+
+    parts = new Array( N_PARTS );
+    {
+        var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
+        var initial_transform = new Transform(0,new Point(0,0));
+        var label = "A";
+        var variables_that_affect_us = [ 0 ];
+        parts[0] = new Part( label, poly, initial_transform, variables_that_affect_us );
+    }
+    {
+        var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
+        var initial_transform = new Transform(0,new Point(0,0));
+        var label = "B";
+        var variables_that_affect_us = [ 1 ];
+        parts[1] = new Part( label, poly, initial_transform, variables_that_affect_us );
+    }
+    
+    // each variable applies to a part, and transforms it in some way
+    variables = new Array(N_VARIABLES);
+    {
+        var initial_value = 0;
+        var transform = new Transform( 2*Math.PI, new Point(0,0) );//new Point(1,-0.3) );
+        var iPart = 0;
+        var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
+        var min_value = 0;
+        var max_value = 1;
+        variables[0] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
+    }    
+    {
+        var initial_value = 0;
+        var transform = new Transform( 0, new Point(-0.2,-1) );
+        var iPart = 1;
+        var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
+        var min_value = 0;
+        var max_value = 500;
+        variables[1] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
+    }    
+
+    N_CONNECTIONS = 1;
+    plot_scale = ( canvas.height - margin*(N_CONNECTIONS+1) ) / ( area_width * N_CONNECTIONS );
+
+    connections = new Array(N_CONNECTIONS);
+    connections[0] = computeConstraints( 0, 1 );
+}
+
+// -----------------------------------------------------------------------------------
+
+function computeConstraints( iVar1, iVar2 ) {
+    var connection = new Connection( iVar1, iVar2 );
+    // TODO
+    return connection
+}
 
 // -----------------------------------------------------------------------------------
 
@@ -396,13 +455,16 @@ function drawPart( iPart ) {
     else
         context.fillStyle = 'grey';
     context.beginPath();
+    var centroid = new Point(0,0);
     for( var iPt = 0; iPt < poly.length; iPt++ ) {
         var p = projectAreaToScreen( poly[ iPt ] );
         if( iPt == 0 )
             context.moveTo( p.x, p.y );
         else
             context.lineTo( p.x, p.y );
+        centroid = add( centroid, p );
     }
+    centroid = div( centroid, poly.length );
     context.closePath();
     context.fill();
     context.lineWidth = 1;
@@ -413,8 +475,7 @@ function drawPart( iPart ) {
     context.textAlign = "center";
     context.fillStyle = "black";
     context.textBaseline="middle"; 
-    var scp = projectAreaToScreen( applyPartTransform( iPart, new Point( 0, 0 ) ) );
-    context.fillText( part.label, scp.x, scp.y );
+    context.fillText( part.label, centroid.x, centroid.y );
 }
 
 // -----------------------------------------------------------------------------------
@@ -440,33 +501,70 @@ function applyPartTransform( iPart, p ) {
 
 // -----------------------------------------------------------------------------------
 
+function applyInversePartTransform( iPart, p ) {
+    var part = parts[ iPart ];
+    // first apply inverse translations
+    var cp = add( p, mul( part.transform.translation, -1 ) );
+    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
+        var iVariable = part.variables_that_affect_us[ iiVariable ];
+        var variable = variables[ iVariable ];
+        cp = add( cp, mul( variable.transform.translation, -variable.value ) );
+    }
+    // then apply the inverse rotations
+    cp = rotate( cp, -part.transform.rotation );
+    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
+        var iVariable = part.variables_that_affect_us[ iiVariable ];
+        var variable = variables[ iVariable ];
+        cp = rotate( cp, variable.transform.rotation * -variable.value );
+    }
+    return cp;
+}
+
+// -----------------------------------------------------------------------------------
+
+function applyPartTransformWithChangedVariable( iPart, p, iVar, value ) {
+    var part = parts[ iPart ];
+    // first apply the rotations
+    var cp = rotate( p, part.transform.rotation );
+    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
+        var iVariable = part.variables_that_affect_us[ iiVariable ];
+        var variable = variables[ iVariable ];
+        var value_to_use = (iVariable==iVar)?value:variable.value;
+        cp = rotate( cp, variable.transform.rotation * value_to_use );
+    }
+    // then apply translations
+    cp = add( cp, part.transform.translation );
+    for( var iiVariable = 0; iiVariable < part.variables_that_affect_us.length; iiVariable++ ) {
+        var iVariable = part.variables_that_affect_us[ iiVariable ];
+        var variable = variables[ iVariable ];
+        var value_to_use = (iVariable==iVar)?value:variable.value;
+        cp = add( cp, mul( variable.transform.translation, value_to_use ) );
+    }
+    return cp;
+}
+
+// -----------------------------------------------------------------------------------
+
 function drawVariableHandle( iVariable, areaPos ) {
     if( iVariable < 0 ) return;
     var variable = variables[ iVariable ];
     
     context.lineWidth = 1;
     context.strokeStyle = 'black';
-
-    if( Math.abs( variable.transform.rotation ) > 0 ) {
-        var cp = applyPartTransform( variable.iPart, new Point( 0, 0 ) );
-        var scp = projectAreaToScreen( cp );
-        context.beginPath();
-        var radius = Math.max( 20, len( sub( areaPos, cp ) ) );
-        context.arc( scp.x, scp.y, radius, 0, 1.8*Math.PI );
-        context.stroke();
-        // TODO: only show a short length of arc, to either side of the cursor
-        // TODO: add arrowheads
-    }
-    else {
-        var p1 = sub( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
-        var p2 = add( areaPos, mul( variable.transform.translation, 0.05*(variable.max_value-variable.min_value) ) );
-        var sp = projectAreaToScreen( areaPos );
-        var sp1 = projectAreaToScreen( p1 );
-        var sp2 = projectAreaToScreen( p2 );
-        
-        drawArrow( sp, sp1 );
-        drawArrow( sp, sp2 );
-    }
+    
+    // show where this point would move to
+    var pp = applyInversePartTransform( variable.iPart, areaPos );
+    var arrow_length_in_variable_units = ( variable.max_value - variable.min_value ) * 0.05;
+    var p1 = applyPartTransformWithChangedVariable( variable.iPart, pp, iVariable, variable.value + arrow_length_in_variable_units );
+    var p2 = applyPartTransformWithChangedVariable( variable.iPart, pp, iVariable, variable.value - arrow_length_in_variable_units );
+    var sp = projectAreaToScreen( areaPos );
+    var sp1 = projectAreaToScreen( p1 );
+    var sp2 = projectAreaToScreen( p2 );
+    
+    drawArrow( sp, sp1 );
+    drawArrow( sp, sp2 );
+    
+    return;
 }
 
 // -----------------------------------------------------------------------------------
@@ -492,6 +590,12 @@ function drawArrow( from, to ) {
 function drawConstraint( constraint, iPlotConnection ) {
     var a = projectPlotToScreen( constraint.p1, iPlotConnection );
     var b = projectPlotToScreen( constraint.p2, iPlotConnection );
+    drawDirectedLineSegment( a, b );
+}
+    
+// -----------------------------------------------------------------------------------
+
+function drawDirectedLineSegment( a, b ) {
     context.beginPath();
     context.moveTo( a.x, a.y );
     context.lineTo( b.x, b.y );
@@ -515,7 +619,26 @@ function drawConstraint( constraint, iPlotConnection ) {
 
 // return true if we were able to perform the whole move
 function tryMoveDriver( grabPos, mousePos ) {
-    var new_value = variables[ iDrivenVariable ].value + mousePos.x - grabPos.x; // TODO: generalize to the variable's transform
+    var variable = variables[ iDrivenVariable ];
+    var arrow_length_in_variable_units = ( variable.max_value - variable.min_value ) * 0.05;
+    var pp = applyInversePartTransform( variable.iPart, grabPos );
+    var p1 = applyPartTransformWithChangedVariable( variable.iPart, pp, iDrivenVariable, variable.value + arrow_length_in_variable_units );
+    var p2 = applyPartTransformWithChangedVariable( variable.iPart, pp, iDrivenVariable, variable.value - arrow_length_in_variable_units );
+    var new_value = null;
+    if( len( sub( mousePos, p1 ) ) < len( sub( mousePos, p2 ) ) ) {
+        // move in p1 direction (+ve)
+        var a = sub( mousePos, grabPos );
+        var b = sub( p1, grabPos );
+        new_value = variable.value + dot( a, norm( b ) ) * arrow_length_in_variable_units / len( b );
+    }
+    else {
+        // move in p2 direction (-ve)
+        var a = sub( mousePos, grabPos );
+        var b = sub( p2, grabPos );
+        new_value = variable.value - dot( a, norm( b ) ) * arrow_length_in_variable_units / len( b );
+    }
+
+    //var new_value = variables[ iDrivenVariable ].value + mousePos.x - grabPos.x; // TODO: generalize to the variable's transform
     var moved = new Array( N_VARIABLES );
     for( var i = 0; i < N_VARIABLES; i++ )
         moved[ i ] = false;
