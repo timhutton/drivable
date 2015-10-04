@@ -80,17 +80,24 @@ draw(canvas);
 function initWithTest() {
     N_VARIABLES = 2;
     N_PARTS = 2;
-
+    var N = 10;
+    
     parts = new Array( N_PARTS );
     {
-        var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
+        //var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
+        var poly = new Array(N);
+        for( var i = 0; i < N; i++ )
+            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "A";
         var variables_that_affect_us = [ 0 ];
         parts[0] = new Part( label, poly, initial_transform, variables_that_affect_us );
     }
     {
-        var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
+        //var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
+        var poly = new Array(N);
+        for( var i = 0; i < N; i++ )
+            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 100*Math.sin(i*2*Math.PI/N) );
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "B";
         var variables_that_affect_us = [ 1 ];
@@ -101,11 +108,11 @@ function initWithTest() {
     variables = new Array(N_VARIABLES);
     {
         var initial_value = 0;
-        var transform = new Transform( 0, new Point(0.5,-0.15) );
+        var transform = new Transform( 0, new Point(0.5,0.15) );
         var iPart = 0;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
-        var max_value = 500;
+        var max_value = 1000;
         variables[0] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
     }    
     {
@@ -114,7 +121,7 @@ function initWithTest() {
         var iPart = 1;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
-        var max_value = 500;
+        var max_value = 1000;
         variables[1] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
     }    
 
@@ -721,11 +728,13 @@ function tryChangeVariable( iVariable, new_value, moved ) {
         // if none then there's nothing in the way, so we don't need to check any further
         if( cr.outcome == CollisionOutcome.MISS ) {
             variables[ iVariable ].value = new_value;
+            console.log('no colliding constraints found');
             return true;
         }
         // if friction jam then we can stop immediately, with no knock-on effects
         if( cr.outcome == CollisionOutcome.FRICTION_JAM ) {
             variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
+            console.log('friction jam');
             return false;
         }
         // else this move has caused a slide (to end of constraint or partial) which
@@ -742,15 +751,18 @@ function tryChangeVariable( iVariable, new_value, moved ) {
             variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
             // (this is OK for now - might take another little push to make full contact)
             // (or do we need to return something from the tryChangeVariable function somehow?)
+            console.log('knock-on constraints');
             return false; 
         }
         variables[ iVariable ].value = cr.isA ? cr.slideTo.x : cr.slideTo.y;
         if( cr.outcome == CollisionOutcome.SLIDE_TO_CORNER_JAM || cr.outcome == CollisionOutcome.SLIDE_TO_FRICTION_JAM ) {
             // we slid on this constraint without subsequent problems but now we can go no further
+            console.log('slide to jam');
             return false;
         }
         if( cr.outcome == CollisionOutcome.PARTIAL_SLIDE ) {
             // we slid all the way we wanted and there were no knock-on problems so we're done
+            console.log('slid along constraint');
             return true;
         }
         // (else is CollisionOutcome.SLIDE_TO_END)
@@ -758,6 +770,7 @@ function tryChangeVariable( iVariable, new_value, moved ) {
         // but we need to try to move further from this location, checking the constraints again
         // (maybe check here that we did make *some* progress, else may loop forever)
         // (or guarantee that we haven't checked each constraint already)
+        console.log('slid to end');
         return true; // DEBUG - although maybe is actually better like this for visualisation since it draws the progress so far
                      //         and subsequent mouse moves will take it further. for parts with complex shapes this might get annoying
                      //         since the user would have to wiggle their mouse to persuade the driven part to keep moving through
@@ -780,13 +793,15 @@ function findFirstConstraintCollision( iVariable, new_value, moved ) {
         {
             isA = true;
             iOtherVariable = connection.b;
-            move = new LineSegment( new Point( variables[ iVariable ].value, variables[ iOtherVariable ].value ), new Point( new_value, variables[ iOtherVariable ].value ) );
+            move = new LineSegment( new Point( variables[ iVariable ].value, variables[ iOtherVariable ].value ), 
+                                    new Point( new_value, variables[ iOtherVariable ].value ) );
         }
         else if( connection.b == iVariable && !moved[ connection.a ] )
         {
             isA = false;
             iOtherVariable = connection.a;
-            move = new LineSegment( new Point( variables[ iOtherVariable ].value, variables[ iVariable ].value ), new Point( variables[ iOtherVariable ].value, new_value ) );
+            move = new LineSegment( new Point( variables[ iOtherVariable ].value, variables[ iVariable ].value ), 
+                                    new Point( variables[ iOtherVariable ].value, new_value ) );
         }
         else {
             continue;
@@ -974,17 +989,16 @@ function lineSegmentsIntersection(s1,s2) {
 // -----------------------------------------------------------------------------------
 
 function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
-  var det, gamma, lambda;
-  det = (c - a) * (s - q) - (r - p) * (d - b);
-  if (det === 0) {
-    return { test:false };
-  } else {
-    lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
-    gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-    var intersects = (-epsilon <= lambda && lambda <= 1+epsilon) && (-epsilon <= gamma && gamma <= 1+epsilon);
-    var p = lerp( new Point(a,b), new Point(c,d), lambda );
-    return { test:intersects, point:p };
-  }
+    var det = (c - a) * (s - q) - (r - p) * (d - b);
+    if (det === 0) {
+        return { test:false };
+    } else {
+        var lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+        var gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+        var intersects = (-epsilon <= lambda && lambda <= 1+epsilon) && (-epsilon <= gamma && gamma <= 1+epsilon);
+        var p = lerp( new Point(a,b), new Point(c,d), lambda );
+        return { test:intersects, point:p };
+    }
 }
 
 // -----------------------------------------------------------------------------------
@@ -996,17 +1010,16 @@ function lineSegmentWithLineIntersection( s, p2, v2 ) {
 // -----------------------------------------------------------------------------------
 
 function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
-  var det, gamma, lambda;
-  det = (c - a) * (s - q) - (r - p) * (d - b);
-  if (det === 0) {
-    return { test:false };
-  } else {
-    lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
-    gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-    var intersects = (-epsilon <= lambda && lambda <= 1+epsilon);
-    var p = lerp( new Point(a,b), new Point(c,d), lambda );
-    return { test:intersects, point:p };
-  }
+    var det = (c - a) * (s - q) - (r - p) * (d - b);
+    if (det === 0) {
+        return { test:false };
+    } else {
+        var lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+        var gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+        var intersects = (-epsilon <= lambda && lambda <= 1+epsilon);
+        var p = lerp( new Point(a,b), new Point(c,d), lambda );
+        return { test:intersects, point:p };
+    }
 }
 
 // -----------------------------------------------------------------------------------
@@ -1019,16 +1032,15 @@ function lineWithLineIntersection( p1, v1, p2, v2 ) {
 // -----------------------------------------------------------------------------------
 
 function lineWithLineIntersection2( a,b,c,d,p,q,r,s ) {
-  var det, gamma, lambda;
-  det = (c - a) * (s - q) - (r - p) * (d - b);
-  if (det === 0) {
-    return { test:false }; // parallel lines
-  } else {
-    lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
-    //gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-    gamma = ((d - b) * (r - a) + (a - c) * (s - b)) / det; // TODO: are the other gammas wrong?
-    return { test:true, u1:lambda, u2:gamma };
-  }
+    var det = (c - a) * (s - q) - (r - p) * (d - b);
+    if (det === 0) {
+        return { test:false }; // parallel lines
+    } else {
+        var lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+        //gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+        var gamma = ((d - b) * (r - a) + (a - c) * (s - b)) / det; // TODO: are the other gammas wrong?
+        return { test:true, u1:lambda, u2:gamma };
+    }
 }
 
 // -----------------------------------------------------------------------------------
