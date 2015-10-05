@@ -151,14 +151,14 @@ function LineSegment(p1,p2) {
 function initWithTest() {
     N_VARIABLES = 2;
     N_PARTS = 2;
-    var N = 10;
+    var N = 20;
     
     parts = new Array( N_PARTS );
     {
-        //var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
-        var poly = new Array(N);
+        var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 )/*, new Point( 190, 170 )*/ ];
+        /*var poly = new Array(N);
         for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );
+            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );*/
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "A";
         var variables_that_affect_us = [ 0 ];
@@ -168,7 +168,7 @@ function initWithTest() {
         //var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
         var poly = new Array(N);
         for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 100*Math.sin(i*2*Math.PI/N) );
+            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 60*Math.sin(i*2*Math.PI/N) );
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "B";
         var variables_that_affect_us = [ 1 ];
@@ -210,7 +210,7 @@ function initWithTest() {
         var min_value = 0;
         var max_value = 1000;
         variables[2] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
-    } */   
+    } */  
 
     N_CONNECTIONS = 1;
     plot_scale = Math.min( canvas.height - margin*(N_CONNECTIONS+1), canvas.width - area_width - margin*3 ) / ( area_width * N_CONNECTIONS );
@@ -588,6 +588,14 @@ function draw() {
                 var constraint = segment_group.constraints[iSegment].segment;
                 var highlighted = (iPlotConnection==iHighlightedConnection) && (iSegmentGroup==iHighlightedConstraintGroup) && (iSegment==iHighlightedConstraint);
                 drawConstraint( constraint, iPlotConnection, highlighted );
+                /*{ // DEBUG: label it
+                    var label_pos = projectPlotToScreen( div( add( constraint.p1, constraint.p2 ), 2 ), iPlotConnection );
+                    context.font = "10px Arial";
+                    context.textAlign = "center";
+                    context.textBaseline="middle"; 
+                    context.fillStyle = "black";
+                    context.fillText( iPlotConnection.toString()+","+iSegmentGroup.toString()+","+iSegment.toString(), label_pos.x, label_pos.y );
+                }*/
             }
         }
     }
@@ -1078,49 +1086,27 @@ function testConstraint( move, constraints, iConstraint ) {
 // -----------------------------------------------------------------------------------
 
 function lineSegmentsIntersection(s1,s2) {
-    return lineSegmentsIntersection2(s1.p1.x,s1.p1.y,s1.p2.x,s1.p2.y,s2.p1.x,s2.p1.y,s2.p2.x,s2.p2.y);
-}
-
-// -----------------------------------------------------------------------------------
-
-function lineSegmentsIntersection2(a,b,c,d,p,q,r,s) {
-    var det = (c - a) * (s - q) - (r - p) * (d - b);
-    if (det === 0) {
-        return { test:false };
-    } else {
-        var lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
-        var gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-        var intersects = (-epsilon <= lambda && lambda <= 1+epsilon) && (-epsilon <= gamma && gamma <= 1+epsilon);
-        var p = lerp( new Point(a,b), new Point(c,d), lambda );
-        return { test:intersects, point:p };
-    }
+    var cr = lineWithLineIntersection( s1.p1, sub( s1.p2, s1.p1 ), s2.p1, sub( s2.p2, s2.p1 ) );
+    //if( !cr.test || cr.u1 < 0 || cr.u1 > 1 || cr.u2 < 0 || cr.u2 > 1 ) return { test:false };
+    if( !cr.test || cr.u1 < -epsilon || cr.u1 > 1+epsilon || cr.u2 < -epsilon || cr.u2 > 1+epsilon ) return { test:false };
+    var p = lerp( s1.p1, s1.p2, cr.u1 );
+    return { test:true, point:p };
 }
 
 // -----------------------------------------------------------------------------------
 
 function lineSegmentWithLineIntersection( s, p2, v2 ) {
-    return lineSegmentWithLineIntersection2( s.p1.x, s.p1.y, s.p2.x, s.p2.y, p2.x, p2.y, p2.x+v2.x, p2.y+v2.y );
+    var cr = lineWithLineIntersection( s.p1, sub( s.p2, s.p1 ), p2, v2 );
+    //if( !cr.test || cr.u1 < 0 || cr.u1 > 1 ) return { test:false };
+    if( !cr.test || cr.u1 < -epsilon || cr.u1 > 1+epsilon ) return { test:false };
+    var p = lerp( s.p1, s.p2, cr.u1 );
+    return { test:true, point:p };
 }
 
 // -----------------------------------------------------------------------------------
 
-function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
-    var det = (c - a) * (s - q) - (r - p) * (d - b);
-    if (det === 0) {
-        return { test:false };
-    } else {
-        var lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
-        var gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-        var intersects = (-epsilon <= lambda && lambda <= 1+epsilon);
-        var p = lerp( new Point(a,b), new Point(c,d), lambda );
-        return { test:intersects, point:p };
-    }
-}
-
-// -----------------------------------------------------------------------------------
-
-// http://stackoverflow.com/a/4977569/126823
 function lineWithLineIntersection( u0, v0, u1, v1 ) {
+    // http://stackoverflow.com/a/4977569/126823
     var x00 = u0.x;
     var y00 = u0.y;
     var x10 = u1.x;
@@ -1133,8 +1119,8 @@ function lineWithLineIntersection( u0, v0, u1, v1 ) {
     if( Math.abs( det ) < epsilon ) {
         return { test:false }; // lines parallel or colinear
     }
-    var s = ((x00-x10)*y01 - (y00-y10)*x01 ) / det;
-    var t = -(-(x00-x10)*y11 + (y00 - y10)*x11 ) / det;
+    var t = -(-(x00-x10)*y11 + (y00-y10)*x11 ) / det;    // ip = u0 + t*v0
+    var s =  ( (x00-x10)*y01 - (y00-y10)*x01 ) / det;    // ip = u1 + s*v1
     return { test:true, u1:t, u2:s };
 }
 
