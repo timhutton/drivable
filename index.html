@@ -52,6 +52,10 @@ var currentMousePositionAccepted = true;
 var grabPos = null;
 var isMouseDown = false;
 
+var iHighlightedConnection = -1;
+var iHighlightedConstraintGroup = -1;
+var iHighlightedConstraint = -1;
+
 var N_PARTS = null;
 var N_CONNECTIONS = null;
 var N_VARIABLES = null;
@@ -69,13 +73,80 @@ var CollisionOutcome = {
     SLIDE_TO_CORNER_JAM:   6
 };
 
-// -----------------------------------------------------------------------------------
+// ====================================================================================
 
 //initWithTrucks(5);
 initWithTest();
 draw(canvas);
 
+// ====================================================================================
+
+function Part( label, poly, initial_transform, variables_that_affect_us ) {
+    this.label = label;
+    this.poly = poly;
+    this.initial_transform = initial_transform;
+    this.variables_that_affect_us = variables_that_affect_us;
+ }
+ 
 // -----------------------------------------------------------------------------------
+
+function Transform( rotation, translation ) {
+    this.rotation = rotation;
+    this.translation = translation;
+ }
+ 
+// -----------------------------------------------------------------------------------
+
+function Variable( label, iPart, initial_value, transform, min_value, max_value ) {
+    this.label = label;
+    this.iPart = iPart;
+    this.value = initial_value;
+    this.transform = transform;
+    this.min_value = min_value;
+    this.max_value = max_value;
+}
+
+// -----------------------------------------------------------------------------------
+
+function Connection(a,b) {
+    this.a = a; // this indexed variable is the x-coordinate
+    this.b = b; // this indexed variable is the y-coordinate
+    this.connected_segments = [];
+}
+
+// -----------------------------------------------------------------------------------
+
+function ConnectedSegmentGroup() {
+    this.constraints = [];
+}
+
+// -----------------------------------------------------------------------------------
+
+function Constraint( seg, connected_to_previous, connected_to_next, iPart1, iPt1, iPart2, iSeg2 ) {
+    this.segment = seg;
+    this.connected_to_previous = connected_to_previous;
+    this.connected_to_next = connected_to_next;
+    this.iPart1 = iPart1;
+    this.iPt1 = iPt1;
+    this.iPart2 = iPart2;
+    this.iSeg2 = iSeg2;
+}
+
+// -----------------------------------------------------------------------------------
+
+function Point(x,y) {
+    this.x = x;
+    this.y = y;
+}
+
+// -----------------------------------------------------------------------------------
+
+function LineSegment(p1,p2) {
+    this.p1 = p1;
+    this.p2 = p2;
+}
+
+// ====================================================================================
 
 function initWithTest() {
     N_VARIABLES = 2;
@@ -137,7 +208,6 @@ function initWithTest() {
 function computeConstraints( iVar1, iVar2 ) {
     
     var connection = new Connection( iVar1, iVar2 );
-    var group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
     var var1 = variables[ iVar1 ];
     var var2 = variables[ iVar2 ];
     var part1 = parts[ var1.iPart ];
@@ -154,38 +224,41 @@ function computeConstraints( iVar1, iVar2 ) {
     var v1 = var1.transform.translation; // TODO: rotations
     var v2 = var2.transform.translation; // TODO: rotations
     
-    // make constraints from each (line segment, point) pair
+    // collisions between objects: make constraints from each (line segment, point) pair
+    var collision_group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
     for( var iPt1 = 0; iPt1 < poly1.length; iPt1++ ) {
         var p1 = poly1[ iPt1 ];
         var seg1L = new LineSegment( poly1[ (iPt1+poly1.length-1)%poly1.length ], p1 );
         var seg1R = new LineSegment( p1, poly1[ (iPt1+1)%poly1.length ] );
         var seg1LN = norm( perp( sub( seg1L.p2, seg1L.p1 ) ) );
         var seg1RN = norm( perp( sub( seg1R.p2, seg1R.p1 ) ) );
+        var p1N = norm( add( seg1LN, seg1RN ) );
         for( var iPt2 = 0; iPt2 < poly2.length; iPt2++ ) {
             var p2 = poly2[ iPt2 ];
             var seg2L = new LineSegment( poly2[ (iPt2+poly2.length-1)%poly2.length ], p2 );
             var seg2R = new LineSegment( p2, poly2[ (iPt2+1)%poly2.length ] );
             var seg2LN = norm( perp( sub( seg2L.p2, seg2L.p1 ) ) );
             var seg2RN = norm( perp( sub( seg2R.p2, seg2R.p1 ) ) );
+            var p2N = norm( add( seg2LN, seg2RN ) );
             var gradientS2LNonS1R = getGradientForConstraint( seg2LN, seg1R );
             var gradientS2RNonS1R = getGradientForConstraint( seg2RN, seg1R );
-            if( (gradientS2LNonS1R<0 && gradientS2RNonS1R>0) || (gradientS2LNonS1R>0 && gradientS2RNonS1R<0) ) {
+            if( dot(p2N, seg1RN)<0 && ((gradientS2LNonS1R<=0 && gradientS2RNonS1R>=0) || (gradientS2LNonS1R>=0 && gradientS2RNonS1R<=0)) ) {
                 // add seg1R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg1R, v1, p2, v2 );
-                group.constraints.push( new Constraint( constraint_segment, false, false ) );
+                collision_group.constraints.push( new Constraint( constraint_segment, false, false, var2.iPart, iPt2, var1.iPart, iPt1 ) );
             }
             var gradientS1LNonS2R = getGradientForConstraint( seg1LN, seg2R );
             var gradientS1RNonS2R = getGradientForConstraint( seg1RN, seg2R );
-            if( (gradientS1LNonS2R<0 && gradientS1RNonS2R>0) || (gradientS1LNonS2R>0 && gradientS1RNonS2R<0) ) {
+            if( dot(p1N,seg2RN)<0 && ((gradientS1LNonS2R<=0 && gradientS1RNonS2R>=0) || (gradientS1LNonS2R>=0 && gradientS1RNonS2R<=0)) ) {
                 // add seg2R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg2R, v2, p1, v1 );
                 constraint_segment.p1 = reflectXY( constraint_segment.p1 );
                 constraint_segment.p2 = reflectXY( constraint_segment.p2 );
-                group.constraints.push( new Constraint( constraint_segment, false, false ) );
+                collision_group.constraints.push( new Constraint( constraint_segment, false, false, var1.iPart, iPt1, var2.iPart, iPt2 ) );
             }
         }
     }
-    connection.connected_segments.push( group );
+    connection.connected_segments.push( collision_group );
     
     return connection;
 }
@@ -248,87 +321,72 @@ function initWithTrucks( numTrucksWanted ) {
     // stop the trucks passing through each other or the wall
     connections = new Array(N_CONNECTIONS);
     for( var i = 0; i < N_CONNECTIONS; i++ ) {
+        // DEBUG - want to do this but need to deal with parallel moves first
+        //connections[i] = computeConstraints(i,i+1);
+        //continue;
+        
         connections[i] = new Connection(i,i+1); 
         var group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
         if( N_CONNECTIONS == 1 ) {
             var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
                                                             new Point( truck_width/2, truck_width + truck_width/2 ) ),
                                            true,
-                                           true );
+                                           true,
+                                           0,0,0,0 ); // TODO
             group.constraints.push( leftWall );
             var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
                                                               new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
                                              true,
-                                             true );
+                                             true,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
             var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
                                                              new Point( truck_width/2, area_width-truck_width/2 ) ),
                                             true,
-                                            true );
+                                            true,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( rightWall );
         }
         else if( i == 0 ) {
             var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
                                                             new Point( truck_width/2, truck_width + truck_width/2 ) ),
                                            false,
-                                           true );
+                                           true,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( leftWall );
             var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
                                                               new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
                                              true,
-                                             false );
+                                             false,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
         }
         else if( i == N_CONNECTIONS-1 ) {
             var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
                                                               new Point( area_width - truck_width*3/2, area_width - truck_width/2 ) ),
                                              false,
-                                             true );
+                                             true,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
             var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
                                                              new Point( truck_width/2, area_width-truck_width/2 ) ),
                                             true,
-                                            false );
+                                            false,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( rightWall );
         }
         else {
             var trucksPush = new Constraint( new LineSegment( new Point(truck_width/2,truck_width+truck_width/2),
                                                               new Point(area_width-truck_width*3/2,area_width-truck_width/2) ),
                                              false,
-                                             false );
+                                             false,
+                                           0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
         }
         connections[i].connected_segments.push( group );
     }
 }
     
-// -----------------------------------------------------------------------------------
-
-function Part( label, poly, initial_transform, variables_that_affect_us ) {
-    this.label = label;
-    this.poly = poly;
-    this.initial_transform = initial_transform;
-    this.variables_that_affect_us = variables_that_affect_us;
- }
- 
-// -----------------------------------------------------------------------------------
-
-function Transform( rotation, translation ) {
-    this.rotation = rotation;
-    this.translation = translation;
- }
- 
-// -----------------------------------------------------------------------------------
-
-function Variable( label, iPart, initial_value, transform, min_value, max_value ) {
-    this.label = label;
-    this.iPart = iPart;
-    this.value = initial_value;
-    this.transform = transform;
-    this.min_value = min_value;
-    this.max_value = max_value;
-}
-
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mousedown', function(evt) {
@@ -510,7 +568,8 @@ function draw() {
             var segment_group = connection.connected_segments[ iSegmentGroup ];
             for( var iSegment = 0; iSegment < segment_group.constraints.length; iSegment++) {
                 var constraint = segment_group.constraints[iSegment].segment;
-                drawConstraint( constraint, iPlotConnection );
+                var highlighted = (iPlotConnection==iHighlightedConnection) && (iSegmentGroup==iHighlightedConstraintGroup) && (iSegment==iHighlightedConstraint);
+                drawConstraint( constraint, iPlotConnection, highlighted );
             }
         }
     }
@@ -547,11 +606,34 @@ function drawPart( iPart ) {
     context.strokeStyle = 'black';
     context.stroke();
     
+    // draw the label
     context.font = "30px Arial";
     context.textAlign = "center";
     context.fillStyle = "black";
     context.textBaseline="middle"; 
     context.fillText( part.label, centroid.x, centroid.y );
+    
+    // draw the highlighted vertex and segment
+    if( iHighlightedConnection >= 0 && iHighlightedConstraintGroup >= 0 && iHighlightedConstraint >=0 ) {
+        var highlighted_constraint = connections[ iHighlightedConnection ].connected_segments[ iHighlightedConstraintGroup ].constraints[ iHighlightedConstraint ];
+        if( highlighted_constraint.iPart1 == iPart ) {
+            var p = projectAreaToScreen( poly[ highlighted_constraint.iPt1 ] );
+            context.fillStyle = 'blue';
+            context.beginPath();
+            context.arc( p.x, p.y, 3, 0, 2*Math.PI );
+            context.fill();
+        }
+        if( highlighted_constraint.iPart2 == iPart ) {
+            var p1 = projectAreaToScreen( poly[ highlighted_constraint.iSeg2 ] );
+            var p2 = projectAreaToScreen( poly[ (highlighted_constraint.iSeg2+1)%poly.length ] );
+            context.strokeStyle = 'blue';
+            context.lineWidth = 2;
+            context.beginPath();
+            context.moveTo( p1.x, p1.y );
+            context.lineTo( p2.x, p2.y );
+            context.stroke();
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------
@@ -663,20 +745,26 @@ function drawArrow( from, to ) {
 
 // -----------------------------------------------------------------------------------
 
-function drawConstraint( constraint, iPlotConnection ) {
+function drawConstraint( constraint, iPlotConnection, highlighted ) {
     var a = projectPlotToScreen( constraint.p1, iPlotConnection );
     var b = projectPlotToScreen( constraint.p2, iPlotConnection );
-    drawDirectedLineSegment( a, b );
+    drawDirectedLineSegment( a, b, highlighted );
 }
     
 // -----------------------------------------------------------------------------------
 
-function drawDirectedLineSegment( a, b ) {
+function drawDirectedLineSegment( a, b, highlighted ) {
     context.beginPath();
     context.moveTo( a.x, a.y );
     context.lineTo( b.x, b.y );
-    context.lineWidth = 1;
-    context.strokeStyle = 'black';
+    if( highlighted ) {
+        context.lineWidth = 2;
+        context.strokeStyle = 'blue';
+    }
+    else {
+        context.lineWidth = 1;
+        context.strokeStyle = 'black';
+    }
     context.stroke();
     var d = 8;
     var n = norm( perp( sub( b, a ) ) );
@@ -695,6 +783,7 @@ function drawDirectedLineSegment( a, b ) {
 
 // return true if we were able to perform the whole move
 function tryMoveDriver( grabPos, mousePos ) {
+    iHighlightedConnection = iHighlightedConstraintGroup = iHighlightedConstraint = -1;
     var variable = variables[ iDrivenVariable ];
     var arrow_length_in_variable_units = ( variable.max_value - variable.min_value ) * 0.05;
     var pp = applyInversePartTransform( variable.iPart, grabPos );
@@ -821,6 +910,10 @@ function findFirstConstraintCollision( iVariable, new_value, moved ) {
                     first_collision = cr;
                     first_collision.iOtherVariable = iOtherVariable;
                     first_collision.isA = isA;
+                    // show the user what is happening
+                    iHighlightedConnection = iConnection;
+                    iHighlightedConstraintGroup = iConstraintGroup;
+                    iHighlightedConstraint = iConstraint;
                 }
             }
         }
@@ -836,20 +929,6 @@ function getMousePos(canvas, evt) {
         x: evt.clientX - rect.left,
         y: evt.clientY - rect.top
     };
-}
-
-// -----------------------------------------------------------------------------------
-
-function Point(x,y) {
-    this.x = x;
-    this.y = y;
-}
-
-// -----------------------------------------------------------------------------------
-
-function LineSegment(p1,p2) {
-    this.p1 = p1;
-    this.p2 = p2;
 }
 
 // -----------------------------------------------------------------------------------
@@ -1051,28 +1130,6 @@ function lineWithLineIntersection2( a,b,c,d,p,q,r,s ) {
 
 function getGradientForConstraint( v, constraint ) {
     return dot( v, sub( constraint.p2, constraint.p1 ) );
-}
-
-// -----------------------------------------------------------------------------------
-
-function Connection(a,b) {
-    this.a = a; // this indexed variable is the x-coordinate
-    this.b = b; // this indexed variable is the y-coordinate
-    this.connected_segments = [];
-}
-
-// -----------------------------------------------------------------------------------
-
-function ConnectedSegmentGroup() {
-    this.constraints = [];
-}
-
-// -----------------------------------------------------------------------------------
-
-function Constraint(s,cp,cn) {
-    this.segment = s;
-    this.connected_to_previous = cp;
-    this.connected_to_next = cn;
 }
 
 // -----------------------------------------------------------------------------------
