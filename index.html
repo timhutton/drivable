@@ -155,25 +155,32 @@ function initWithTest() {
     
     parts = new Array( N_PARTS );
     {
-        var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
-        /*var poly = new Array(N);
+        //var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
+        var poly = new Array(N);
         for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );*/
+            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "A";
         var variables_that_affect_us = [ 0 ];
         parts[0] = new Part( label, poly, initial_transform, variables_that_affect_us );
     }
     {
-        var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
-        /*var poly = new Array(N);
+        //var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
+        var poly = new Array(N);
         for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 100*Math.sin(i*2*Math.PI/N) );*/
+            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 100*Math.sin(i*2*Math.PI/N) );
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "B";
         var variables_that_affect_us = [ 1 ];
         parts[1] = new Part( label, poly, initial_transform, variables_that_affect_us );
     }
+    /*{
+        var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
+        var initial_transform = new Transform(0,new Point(100,-200));
+        var label = "C";
+        var variables_that_affect_us = [ 2 ];
+        parts[2] = new Part( label, poly, initial_transform, variables_that_affect_us );
+    }*/
     
     // each variable applies to a part, and transforms it in some way
     variables = new Array(N_VARIABLES);
@@ -195,12 +202,23 @@ function initWithTest() {
         var max_value = 1000;
         variables[1] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
     }    
+    /*{
+        var initial_value = 0;
+        var transform = new Transform( 0, new Point(-0.9,0.3) );
+        var iPart = 2;
+        var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
+        var min_value = 0;
+        var max_value = 1000;
+        variables[2] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
+    } */   
 
     N_CONNECTIONS = 1;
     plot_scale = Math.min( canvas.height - margin*(N_CONNECTIONS+1), canvas.width - area_width - margin*3 ) / ( area_width * N_CONNECTIONS );
 
     connections = new Array(N_CONNECTIONS);
     connections[0] = computeConstraints( 0, 1 );
+    //connections[1] = computeConstraints( 1, 2 );
+    //connections[2] = computeConstraints( 2, 0 );
 }
 
 // -----------------------------------------------------------------------------------
@@ -821,13 +839,11 @@ function tryChangeVariable( iVariable, new_value, moved ) {
         // if none then there's nothing in the way, so we don't need to check any further
         if( cr.outcome == CollisionOutcome.MISS ) {
             variables[ iVariable ].value = new_value;
-            console.log('no colliding constraints found');
             return true;
         }
         // if friction jam then we can stop immediately, with no knock-on effects
         if( cr.outcome == CollisionOutcome.FRICTION_JAM ) {
             variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
-            console.log('friction jam');
             return false;
         }
         // else this move has caused a slide (to end of constraint or partial) which
@@ -844,18 +860,15 @@ function tryChangeVariable( iVariable, new_value, moved ) {
             variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
             // (this is OK for now - might take another little push to make full contact)
             // (or do we need to return something from the tryChangeVariable function somehow?)
-            console.log('knock-on constraints');
             return false; 
         }
         variables[ iVariable ].value = cr.isA ? cr.slideTo.x : cr.slideTo.y;
         if( cr.outcome == CollisionOutcome.SLIDE_TO_CORNER_JAM || cr.outcome == CollisionOutcome.SLIDE_TO_FRICTION_JAM ) {
             // we slid on this constraint without subsequent problems but now we can go no further
-            console.log('slide to jam');
             return false;
         }
         if( cr.outcome == CollisionOutcome.PARTIAL_SLIDE ) {
             // we slid all the way we wanted and there were no knock-on problems so we're done
-            console.log('slid along constraint');
             return true;
         }
         // (else is CollisionOutcome.SLIDE_TO_END)
@@ -863,7 +876,6 @@ function tryChangeVariable( iVariable, new_value, moved ) {
         // but we need to try to move further from this location, checking the constraints again
         // (maybe check here that we did make *some* progress, else may loop forever)
         // (or guarantee that we haven't checked each constraint already)
-        console.log('slid to end');
         return true; // DEBUG - although maybe is actually better like this for visualisation since it draws the progress so far
                      //         and subsequent mouse moves will take it further. for parts with complex shapes this might get annoying
                      //         since the user would have to wiggle their mouse to persuade the driven part to keep moving through
@@ -1107,23 +1119,23 @@ function lineSegmentWithLineIntersection2( a,b,c,d,p,q,r,s ) {
 
 // -----------------------------------------------------------------------------------
 
-function lineWithLineIntersection( p1, v1, p2, v2 ) {
-    return lineWithLineIntersection2( p1.x, p1.y, p1.x + v1.x, p1.y + v1.y, 
-                                      p2.x, p2.y, p2.x + v2.x, p2.y + v2.y );
-}
-
-// -----------------------------------------------------------------------------------
-
-function lineWithLineIntersection2( a,b,c,d,p,q,r,s ) {
-    var det = (c - a) * (s - q) - (r - p) * (d - b);
-    if (det === 0) {
-        return { test:false }; // parallel lines
-    } else {
-        var lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
-        //gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
-        var gamma = ((d - b) * (r - a) + (a - c) * (s - b)) / det; // TODO: are the other gammas wrong?
-        return { test:true, u1:lambda, u2:gamma };
+// http://stackoverflow.com/a/4977569/126823
+function lineWithLineIntersection( u0, v0, u1, v1 ) {
+    var x00 = u0.x;
+    var y00 = u0.y;
+    var x10 = u1.x;
+    var y10 = u1.y;
+    var x01 = v0.x;
+    var y01 = v0.y;
+    var x11 = v1.x;
+    var y11 = v1.y;
+    var det = x11 * y01 - x01 * y11;
+    if( Math.abs( det ) < epsilon ) {
+        return { test:false }; // lines parallel or colinear
     }
+    var s = ((x00-x10)*y01 - (y00-y10)*x01 ) / det;
+    var t = -(-(x00-x10)*y11 + (y00 - y10)*x11 ) / det;
+    return { test:true, u1:t, u2:s };
 }
 
 // -----------------------------------------------------------------------------------
