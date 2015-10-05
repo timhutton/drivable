@@ -71,8 +71,8 @@ var CollisionOutcome = {
 
 // -----------------------------------------------------------------------------------
 
-initWithTrucks(5);
-//initWithTest();
+//initWithTrucks(5);
+initWithTest();
 draw(canvas);
 
 // -----------------------------------------------------------------------------------
@@ -84,20 +84,20 @@ function initWithTest() {
     
     parts = new Array( N_PARTS );
     {
-        //var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
-        var poly = new Array(N);
+        var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 ) ];
+        /*var poly = new Array(N);
         for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );
+            poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );*/
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "A";
         var variables_that_affect_us = [ 0 ];
         parts[0] = new Part( label, poly, initial_transform, variables_that_affect_us );
     }
     {
-        //var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
-        var poly = new Array(N);
+        var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
+        /*var poly = new Array(N);
         for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 100*Math.sin(i*2*Math.PI/N) );
+            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 100*Math.sin(i*2*Math.PI/N) );*/
         var initial_transform = new Transform(0,new Point(0,0));
         var label = "B";
         var variables_that_affect_us = [ 1 ];
@@ -108,7 +108,7 @@ function initWithTest() {
     variables = new Array(N_VARIABLES);
     {
         var initial_value = 0;
-        var transform = new Transform( 0, new Point(0.5,0.15) );
+        var transform = new Transform( 0, new Point(0.6,0.15) );
         var iPart = 0;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
@@ -117,7 +117,7 @@ function initWithTest() {
     }    
     {
         var initial_value = 0;
-        var transform = new Transform( 0, new Point(-0.1,-0.5) );
+        var transform = new Transform( 0, new Point(-0.1,-0.6) );
         var iPart = 1;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
@@ -161,19 +161,23 @@ function computeConstraints( iVar1, iVar2 ) {
         var seg1R = new LineSegment( p1, poly1[ (iPt1+1)%poly1.length ] );
         var seg1LN = norm( perp( sub( seg1L.p2, seg1L.p1 ) ) );
         var seg1RN = norm( perp( sub( seg1R.p2, seg1R.p1 ) ) );
-        var p1N = norm( add( seg1LN, seg1RN ) );
         for( var iPt2 = 0; iPt2 < poly2.length; iPt2++ ) {
             var p2 = poly2[ iPt2 ];
             var seg2L = new LineSegment( poly2[ (iPt2+poly2.length-1)%poly2.length ], p2 );
             var seg2R = new LineSegment( p2, poly2[ (iPt2+1)%poly2.length ] );
             var seg2LN = norm( perp( sub( seg2L.p2, seg2L.p1 ) ) );
             var seg2RN = norm( perp( sub( seg2R.p2, seg2R.p1 ) ) );
-            var p2N = norm( add( seg2LN, seg2RN ) );
-            if( dot( p2N, seg1RN ) < 0 ) {
+            var gradientS2LNonS1R = getGradientForConstraint( seg2LN, seg1R );
+            var gradientS2RNonS1R = getGradientForConstraint( seg2RN, seg1R );
+            if( (gradientS2LNonS1R<0 && gradientS2RNonS1R>0) || (gradientS2LNonS1R>0 && gradientS2RNonS1R<0) ) {
+                // add seg1R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg1R, v1, p2, v2 );
                 group.constraints.push( new Constraint( constraint_segment, false, false ) );
             }
-            if( dot( p1N, seg2RN ) < 0 ) {
+            var gradientS1LNonS2R = getGradientForConstraint( seg1LN, seg2R );
+            var gradientS1RNonS2R = getGradientForConstraint( seg1RN, seg2R );
+            if( (gradientS1LNonS2R<0 && gradientS1RNonS2R>0) || (gradientS1LNonS2R>0 && gradientS1RNonS2R<0) ) {
+                // add seg2R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg2R, v2, p1, v1 );
                 constraint_segment.p1 = reflectXY( constraint_segment.p1 );
                 constraint_segment.p2 = reflectXY( constraint_segment.p2 );
@@ -931,7 +935,7 @@ function testConstraint( move, constraints, iConstraint ) {
         // no collision
         return { outcome:CollisionOutcome.MISS };
     }
-    var gradient = getGradientForConstraint( move, constraint.segment );
+    var gradient = getGradientForConstraint( sub( move.p2, move.p1 ), constraint.segment );
     if( Math.abs( gradient ) < minGradient ) {
         // friction jam
         return { outcome:CollisionOutcome.FRICTION_JAM, firstContact:intersection.point };
@@ -963,7 +967,7 @@ function testConstraint( move, constraints, iConstraint ) {
     }
     var neighboring_gradient = null;
     if( has_neighbor )
-        neighboring_gradient = getGradientForConstraint( move, neighboring_constraint.segment );
+        neighboring_gradient = getGradientForConstraint( sub( move.p2, move.p1 ), neighboring_constraint.segment );
     if( has_neighbor && Math.abs( neighboring_gradient ) < minGradient ) {
         // slide to friction jam
         return { outcome:CollisionOutcome.SLIDE_TO_FRICTION_JAM, firstContact:intersection.point, slideTo:slideEnd };
@@ -1045,8 +1049,8 @@ function lineWithLineIntersection2( a,b,c,d,p,q,r,s ) {
 
 // -----------------------------------------------------------------------------------
 
-function getGradientForConstraint( move, constraint ) {
-    return dot( sub( move.p2, move.p1 ), sub( constraint.p2, constraint.p1 ) );
+function getGradientForConstraint( v, constraint ) {
+    return dot( v, sub( constraint.p2, constraint.p1 ) );
 }
 
 // -----------------------------------------------------------------------------------
