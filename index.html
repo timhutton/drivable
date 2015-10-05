@@ -242,14 +242,14 @@ function computeConstraints( iVar1, iVar2 ) {
             var p2N = norm( add( seg2LN, seg2RN ) );
             var gradientS2LNonS1R = getGradientForConstraint( seg2LN, seg1R );
             var gradientS2RNonS1R = getGradientForConstraint( seg2RN, seg1R );
-            if( dot(p2N, seg1RN)<0 && ((gradientS2LNonS1R<=0 && gradientS2RNonS1R>=0) || (gradientS2LNonS1R>=0 && gradientS2RNonS1R<=0)) ) {
+            if( dot(p2N, seg1RN)<epsilon && ((gradientS2LNonS1R<epsilon && gradientS2RNonS1R>-epsilon) || (gradientS2LNonS1R>-epsilon && gradientS2RNonS1R<epsilon)) ) {
                 // add seg1R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg1R, v1, p2, v2 );
                 collision_group.constraints.push( new Constraint( constraint_segment, false, false, var2.iPart, iPt2, var1.iPart, iPt1 ) );
             }
             var gradientS1LNonS2R = getGradientForConstraint( seg1LN, seg2R );
             var gradientS1RNonS2R = getGradientForConstraint( seg1RN, seg2R );
-            if( dot(p1N,seg2RN)<0 && ((gradientS1LNonS2R<=0 && gradientS1RNonS2R>=0) || (gradientS1LNonS2R>=0 && gradientS1RNonS2R<=0)) ) {
+            if( dot(p1N,seg2RN)<epsilon && ((gradientS1LNonS2R<epsilon && gradientS1RNonS2R>-epsilon) || (gradientS1LNonS2R>-epsilon && gradientS1RNonS2R<epsilon)) ) {
                 // add seg2R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg2R, v2, p1, v1 );
                 constraint_segment.p1 = reflectXY( constraint_segment.p1 );
