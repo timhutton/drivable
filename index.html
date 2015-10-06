@@ -181,6 +181,7 @@ function initWithTest() {
         var variables_that_affect_us = [ 2 ];
         parts[2] = new Part( label, poly, initial_transform, variables_that_affect_us );
     }*/
+    addTinyNoiseToPartCoordinates();
     
     // each variable applies to a part, and transforms it in some way
     variables = new Array(N_VARIABLES);
@@ -219,6 +220,19 @@ function initWithTest() {
     connections[0] = computeConstraints( 0, 1 );
     //connections[1] = computeConstraints( 1, 2 );
     //connections[2] = computeConstraints( 2, 0 );
+}
+
+// -----------------------------------------------------------------------------------
+
+function addTinyNoiseToPartCoordinates() {
+    // if have constructed parts with implausibly parallel sides then would get ambiguities in the constraints,
+    // so add a tiny bit of noise to make things more sensible
+    var r = 0.0001;
+    for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
+        for( var iPt = 0; iPt < parts[ iPart ].poly.length; iPt++ ) {
+            parts[ iPart ].poly[ iPt ] = add( parts[ iPart ].poly[ iPt ], new Point( Math.random()*2*r - r, Math.random()*2*r - r ) );
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------
