@@ -159,7 +159,7 @@ function initWithTest() {
         /*var poly = new Array(N);
         for( var i = 0; i < N; i++ )
             poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );*/
-        var initial_transform = new Transform(0,new Point(0,0));
+        var initial_transform = new Transform(-0.4,new Point(0,0));
         var label = "A";
         var variables_that_affect_us = [ 0 ];
         parts[0] = new Part( label, poly, initial_transform, variables_that_affect_us );
@@ -169,7 +169,7 @@ function initWithTest() {
         var poly = new Array(N);
         for( var i = 0; i < N; i++ )
             poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 60*Math.sin(i*2*Math.PI/N) );
-        var initial_transform = new Transform(0,new Point(0,0));
+        var initial_transform = new Transform(0.2,new Point(200,0));
         var label = "B";
         var variables_that_affect_us = [ 1 ];
         parts[1] = new Part( label, poly, initial_transform, variables_that_affect_us );
@@ -195,7 +195,7 @@ function initWithTest() {
         variables[0] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
     }    
     {
-        var initial_value = 0;
+        var initial_value = 200;
         var transform = new Transform( 0, new Point(-0.1,-0.6) );
         var iPart = 1;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
