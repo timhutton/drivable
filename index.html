@@ -50,7 +50,7 @@ var context = canvas.getContext('2d');
 var iDrivenVariable = -1;
 var currentMousePositionAccepted = true;
 var grabPos = null;
-var isMouseDown = false;
+var isDragging = false;
 
 var iHighlightedConnection = -1;
 var iHighlightedConstraintGroup = -1;
@@ -62,7 +62,6 @@ var N_VARIABLES = null;
 var parts = null;
 var connections = null;
 var variables = null;
-var plot_scale = null;
 
 var CollisionOutcome = {
     MISS:                  1,
@@ -155,11 +154,11 @@ function initWithTest() {
     
     parts = new Array( N_PARTS );
     {
-        var poly = [ new Point( 200, 200 ), new Point( 150, 150 ), new Point( 200, 150 )/*, new Point( 190, 170 )*/ ];
+        var poly = [ new Point( 200, 200 ), new Point( 200, 150 ), new Point( 150, 150 )/*, new Point( 190, 170 )*/ ];
         /*var poly = new Array(N);
         for( var i = 0; i < N; i++ )
             poly[i] = new Point( 100 + 50*Math.cos(i*2*Math.PI/N), 100 + 50*Math.sin(i*2*Math.PI/N) );*/
-        var initial_transform = new Transform(-0.4,new Point(0,0));
+        var initial_transform = new Transform(-0.4,new Point(0,150));
         var label = "A";
         var variables_that_affect_us = [ 0 ];
         parts[0] = new Part( label, poly, initial_transform, variables_that_affect_us );
@@ -167,16 +166,18 @@ function initWithTest() {
     {
         //var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
         var poly = new Array(N);
-        for( var i = 0; i < N; i++ )
-            poly[i] = new Point( 300 + 25*Math.cos(i*2*Math.PI/N), 300 + 60*Math.sin(i*2*Math.PI/N) );
-        var initial_transform = new Transform(0.2,new Point(200,0));
+        for( var i = 0; i < N; i++ ) {
+            var theta = -i*2*Math.PI/N;
+            poly[i] = new Point( 300 + 25*Math.cos( theta ), 300 + 60*Math.sin( theta ) );
+        }
+        var initial_transform = new Transform(0.2,new Point(0,-200));
         var label = "B";
         var variables_that_affect_us = [ 1 ];
         parts[1] = new Part( label, poly, initial_transform, variables_that_affect_us );
     }
     /*{
         var poly = [ new Point( 300, 300 ), new Point( 350, 300 ), new Point( 350, 350 ) ];
-        var initial_transform = new Transform(0,new Point(100,-200));
+        var initial_transform = new Transform(0,new Point(300,-25));
         var label = "C";
         var variables_that_affect_us = [ 2 ];
         parts[2] = new Part( label, poly, initial_transform, variables_that_affect_us );
@@ -187,7 +188,7 @@ function initWithTest() {
     variables = new Array(N_VARIABLES);
     {
         var initial_value = 0;
-        var transform = new Transform( 0, new Point(0.6,0.15) );
+        var transform = new Transform( 0, new Point(1,0.001) );
         var iPart = 0;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
@@ -195,8 +196,8 @@ function initWithTest() {
         variables[0] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
     }    
     {
-        var initial_value = 200;
-        var transform = new Transform( 0, new Point(-0.1,-0.6) );
+        var initial_value = 0;
+        var transform = new Transform( 0, new Point(0,1) );
         var iPart = 1;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
@@ -205,16 +206,15 @@ function initWithTest() {
     }    
     /*{
         var initial_value = 0;
-        var transform = new Transform( 0, new Point(-0.9,0.3) );
+        var transform = new Transform( 0, new Point(1,1) );
         var iPart = 2;
         var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
         var min_value = 0;
         var max_value = 1000;
         variables[2] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
-    } */  
+    }*/
 
     N_CONNECTIONS = 1;
-    plot_scale = Math.min( canvas.height - margin*(N_CONNECTIONS+1), canvas.width - area_width - margin*3 ) / ( area_width * N_CONNECTIONS );
 
     connections = new Array(N_CONNECTIONS);
     connections[0] = computeConstraints( 0, 1 );
@@ -292,7 +292,63 @@ function computeConstraints( iVar1, iVar2 ) {
     }
     connection.connected_segments.push( collision_group );
     
+    connection.connected_segments.push( getConstraintsFromWalls2( iVar1, iVar2 ) );
+    
     return connection;
+}
+
+// -----------------------------------------------------------------------------------
+
+function getConstraintsFromWalls2( iVar1, iVar2 ) {
+    var collision_group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
+    var range1 = getConstraintsFromWalls( iVar1 );
+    var range2 = getConstraintsFromWalls( iVar2 );
+    variables[ iVar1 ].min_value = range1[0]-20;
+    variables[ iVar1 ].max_value = range1[1]+20;
+    variables[ iVar2 ].min_value = range2[0]-20;
+    variables[ iVar2 ].max_value = range2[1]+20;
+    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[0], range2[0] ), new Point( range1[1], range2[0] ) ), 
+        true, true, variables[ iVar2 ].iPart, range2[2], -1, -1 ) ); // bottom wall
+    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[1], range2[0] ), new Point( range1[1], range2[1] ) ), 
+        true, true, variables[ iVar1 ].iPart, range1[3], -1, -1 ) ); // right wall
+    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[1], range2[1] ), new Point( range1[0], range2[1] ) ), 
+        true, true, variables[ iVar2 ].iPart, range2[3], -1, -1 ) ); // top wall
+    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[0], range2[1] ), new Point( range1[0], range2[0] ) ), 
+        true, true, variables[ iVar1 ].iPart, range1[2], -1, -1 ) ); // left wall
+    return collision_group;
+}
+
+// -----------------------------------------------------------------------------------
+
+function getConstraintsFromWalls( iVar ) {
+    // we want our variable range to be the from the largest of all the min_vals to the lowest of all the max_vals
+    var range = [ -Number.MAX_VALUE, Number.MAX_VALUE, -1, -1 ]; // min_value, max_value, iPtMinValue, iPtMaxValue
+    var poly = getInitiallyTransformedPart( variables[ iVar ].iPart );
+    var walls = [ [ new Point( 0, 0 ),           new Point( 0, 1 ) ],    // bottom wall (point, normal)
+                  [ new Point( 0, 0 ),           new Point( 1, 0 ) ],    // left wall
+                  [ new Point( area_width, 0 ),  new Point( -1, 0 ) ],   // right wall
+                  [ new Point( 0, area_height ), new Point( 0, -1 ) ] ]; // top wall
+    for( var iPt = 0; iPt < poly.length; iPt++ ) {
+        for( var iWall = 0; iWall < walls.length; iWall++ ) {
+            // TODO: extend to rotations too
+            var wallIntersection = lineWithLineIntersection( walls[ iWall ][0], perp( walls[ iWall ][1] ), poly[ iPt ], variables[ iVar ].transform.translation );
+            if( !wallIntersection.test ) continue; // (movement parallel to wall)
+            var is_min_val = ( dot( walls[ iWall ][1], variables[ iVar ].transform.translation ) > 0 );
+            if( is_min_val ) {
+                if( wallIntersection.u2 > range[0] ) {
+                    range[0] = wallIntersection.u2;
+                    range[2] = iPt;
+                }
+            }
+            else {
+                if( wallIntersection.u2 < range[1] ) {
+                    range[1] = wallIntersection.u2;
+                    range[3] = iPt;
+                }
+            }
+        }
+    }
+    return range;
 }
 
 // -----------------------------------------------------------------------------------
@@ -348,7 +404,6 @@ function initWithTrucks( numTrucksWanted ) {
     }    
 
     N_CONNECTIONS = N_PARTS-1;
-    plot_scale = ( canvas.height - margin*(N_CONNECTIONS+1) ) / ( area_width * N_CONNECTIONS );
 
     // stop the trucks passing through each other or the wall
     connections = new Array(N_CONNECTIONS);
@@ -422,23 +477,24 @@ function initWithTrucks( numTrucksWanted ) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mousedown', function(evt) {
-    isMouseDown = true;
     var mousePos = getMousePos(canvas, evt);
     // if within a shape then make it the driver
-    var areaPos = projectScreenToArea( mousePos );
-    var iVariable = getVariableHandleByAreaPos( areaPos );
-    if( iVariable >= 0 ) {
-        iDrivenVariable = iVariable;
-        grabPos = areaPos;
-        draw();
-        drawVariableHandle( iDrivenVariable, areaPos );
-        return;
+    if( pointInRect( mousePos, getAreaRect() ) ) {
+        var areaPos = projectScreenToArea( mousePos );
+        var iVariable = getVariableHandleByAreaPos( areaPos );
+        if( iVariable >= 0 ) {
+            iDrivenVariable = iVariable;
+            grabPos = areaPos;
+            isDragging = true;
+            draw();
+            drawVariableHandle( iDrivenVariable, areaPos );
+            return;
+        }
     }
     // if on a plot then set those variables directly
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
-        var plotPos = projectScreenToPlot( mousePos, iPlotConnection );
-        if( pointInRect( plotPos, {x:0,y:0,w:area_width,h:area_width} ) )
-        {
+        if( pointInRect( mousePos, getPlotRect( iPlotConnection ) ) ) {
+            var plotPos = projectScreenToPlot( mousePos, iPlotConnection );
             var connection = connections[ iPlotConnection ];
             variables[ connection.a ].value = plotPos.x;
             variables[ connection.b ].value = plotPos.y;
@@ -453,8 +509,7 @@ canvas.addEventListener('mousedown', function(evt) {
 canvas.addEventListener('mousemove', function(evt) {
     var mousePos = getMousePos(canvas, evt);
     var areaPos = projectScreenToArea( mousePos );
-    if( isMouseDown ) {
-        if( iDrivenVariable < 0 ) return;
+    if( isDragging && iDrivenVariable >= 0 ) {
         currentMousePositionAccepted = tryMoveDriver( grabPos, areaPos );
         if( currentMousePositionAccepted ) {
             grabPos = areaPos;
@@ -463,6 +518,7 @@ canvas.addEventListener('mousemove', function(evt) {
         }
     }
     else {
+        // TODO: if moving over a constraint, highlight it
         iDrivenVariable = getVariableHandleByAreaPos( areaPos );
         currentMousePositionAccepted = true;
     }
@@ -473,7 +529,7 @@ canvas.addEventListener('mousemove', function(evt) {
 // -----------------------------------------------------------------------------------
 
 canvas.addEventListener('mouseup', function(evt) {
-    isMouseDown = false;
+    isDragging = false;
     currentMousePositionAccepted = true;
     var mousePos = getMousePos(canvas, evt);
     var areaPos = projectScreenToArea( mousePos );
@@ -494,6 +550,17 @@ function getVariableHandleByAreaPos( areaPos ) {
 
 // -----------------------------------------------------------------------------------
 
+function getInitiallyTransformedPart( iPart ) {
+    var tp = [];
+    var part = parts[ iPart ];
+    for( var iPt = 0; iPt < part.poly.length; iPt++ ) {
+        tp.push( applyTransform( part.poly[iPt], part.initial_transform, 1 ) );
+    }
+    return tp;
+}
+
+// -----------------------------------------------------------------------------------
+
 function getTransformedPart( iPart ) {
     var tp = [];
     var part = parts[ iPart ];
@@ -506,27 +573,47 @@ function getTransformedPart( iPart ) {
 // -----------------------------------------------------------------------------------
 
 function projectAreaToScreen( p ) {
-    return new Point(p.x+margin, p.y+margin );
+    return new Point( p.x + margin, margin + area_height - p.y );
 }
 
 // -----------------------------------------------------------------------------------
 
-function projectScreenToArea( p ) {
-    return new Point(p.x-margin, p.y-margin );
+function projectScreenToArea( sp ) {
+    return new Point( sp.x - margin, margin + area_height - sp.y );
+}
+
+// -----------------------------------------------------------------------------------
+
+function getPlotSizeInPixels() {
+    return Math.min( canvas.width - area_width - margin*3, ( canvas.height - (N_CONNECTIONS+1)*margin ) / N_CONNECTIONS );
 }
 
 // -----------------------------------------------------------------------------------
 
 function projectPlotToScreen( p, i ) {
-    return new Point( p.x*plot_scale + area_width+margin*2, 
-                      (area_width*plot_scale+margin)*i + margin + (area_width-p.y)*plot_scale  );
+    var varX = variables[ connections[ i ].a ];
+    var varY = variables[ connections[ i ].b ];
+    var min_x = varX.min_value;
+    var max_x = varX.max_value;
+    var min_y = varY.min_value;
+    var max_y = varY.max_value;
+    var plot_size = getPlotSizeInPixels();
+    return new Point( plot_size * ( p.x - min_x ) / ( max_x - min_x ) + area_width + margin*2, 
+                      i*(margin+plot_size) + margin + plot_size - plot_size * ( p.y - min_y ) / ( max_y - min_y ) );
 }
 
 // -----------------------------------------------------------------------------------
 
-function projectScreenToPlot( p, i ) {
-    return new Point( ( p.x - (area_width+margin*2) ) / plot_scale, 
-                      area_width - (p.y - (area_width*plot_scale+margin)*i - margin ) / plot_scale );
+function projectScreenToPlot( sp, i ) {
+    var varX = variables[ connections[ i ].a ];
+    var varY = variables[ connections[ i ].b ];
+    var min_x = varX.min_value;
+    var max_x = varX.max_value;
+    var min_y = varY.min_value;
+    var max_y = varY.max_value;
+    var plot_size = getPlotSizeInPixels();
+    return new Point( ( sp.x - margin*2 - area_width ) * ( max_x - min_x ) / plot_size + min_x,
+                      ( sp.y - margin - i*(margin+plot_size) - plot_size ) * ( max_y - min_y ) / ( -plot_size ) + min_y );
 }
 
 // -----------------------------------------------------------------------------------
@@ -539,10 +626,9 @@ function draw() {
     context.fill();
     
     // show the collision area
+    var area_rect = getAreaRect();
     context.beginPath();
-    var a = projectAreaToScreen( new Point(0,0) );
-    var b = projectAreaToScreen( new Point(area_width,area_height) );
-    context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
+    context.rect( area_rect.x, area_rect.y, area_rect.w, area_rect.h );
     context.fillStyle = 'white';
     context.fill();
     context.lineWidth = 1;
@@ -557,18 +643,20 @@ function draw() {
     // plot
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
         var connection = connections[ iPlotConnection ];
+        var varX = variables[ connection.a ];
+        var varY = variables[ connection.b ];
         // blank the plot area
+        var plot_rect = getPlotRect( iPlotConnection );
         context.beginPath();
-        var a = projectPlotToScreen( new Point(0,0), iPlotConnection );
-        var b = projectPlotToScreen( new Point(area_width, area_width), iPlotConnection );
-        context.rect( a.x, a.y, b.x-a.x, b.y-a.y );
+        context.rect( plot_rect.x, plot_rect.y, plot_rect.w, plot_rect.h );
         context.fillStyle = 'white';
         context.fill();
+        context.save();
+        context.clip();
         // label the axes
-        var horiz_axis_label_pos = projectPlotToScreen( new Point( area_width/2, 0 ), iPlotConnection );
-        var vert_axis_label_pos = projectPlotToScreen( new Point( 0, area_width/2 ), iPlotConnection );
+        var horiz_axis_label_pos = new Point( plot_rect.x + plot_rect.w/2, plot_rect.y + plot_rect.h );
+        var vert_axis_label_pos = new Point( plot_rect.x, plot_rect.y + plot_rect.h/2 );
         context.font = "12px Arial";
-        context.textAlign = "center";
         if( connection.a == iDrivenVariable ) {
             if( currentMousePositionAccepted )
                 context.fillStyle = 'limegreen';
@@ -577,7 +665,9 @@ function draw() {
         }
         else
             context.fillStyle = "black";
-        context.fillText( variables[ connection.a ].label, horiz_axis_label_pos.x, horiz_axis_label_pos.y );
+        context.textAlign = "center";
+        context.textBaseline = "bottom";
+        context.fillText( varX.label, horiz_axis_label_pos.x, horiz_axis_label_pos.y );
         if( connection.b == iDrivenVariable ) {
             if( currentMousePositionAccepted )
                 context.fillStyle = 'limegreen';
@@ -586,10 +676,20 @@ function draw() {
         }
         else
             context.fillStyle = "black";
-        context.fillText( variables[ connection.b ].label, vert_axis_label_pos.x, vert_axis_label_pos.y );
+        context.textAlign = "left";
+        context.textBaseline = "middle";
+        context.fillText( varY.label, vert_axis_label_pos.x, vert_axis_label_pos.y );
+        /*{ // DEBUG: label the axis ranges
+            context.fillStyle = "black";
+            context.textAlign = "right";
+            context.textBaseline = "bottom";
+            context.fillText( varX.max_value.toString(), plot_rect.x + plot_rect.w, plot_rect.y + plot_rect.h );
+            context.textAlign = "left";
+            context.textBaseline = "top";
+            context.fillText( varY.max_value.toString(), plot_rect.x, plot_rect.y );
+        }*/
         // draw the current state as a blue dot
-        var connection = connections[iPlotConnection];
-        var p = new Point( variables[connection.a].value, variables[connection.b].value );
+        var p = new Point( varX.value, varY.value );
         var pp = projectPlotToScreen( p, iPlotConnection );
         context.beginPath();
         context.arc(pp.x, pp.y, 3, 0, 2*Math.PI);
@@ -612,7 +712,27 @@ function draw() {
                 }*/
             }
         }
+        context.restore();
     }
+}
+
+// -----------------------------------------------------------------------------------
+
+function getAreaRect() {
+    var top_left = projectAreaToScreen( new Point( 0, area_height ) );
+    var bottom_right = projectAreaToScreen( new Point( area_width, 0 ) );
+    return { x:top_left.x, y:top_left.y, w:bottom_right.x-top_left.x, h:bottom_right.y-top_left.y };
+}
+
+// -----------------------------------------------------------------------------------
+
+function getPlotRect( iPlotConnection ) {
+    var connection = connections[ iPlotConnection ];
+    var varX = variables[ connection.a ];
+    var varY = variables[ connection.b ];
+    var top_left = projectPlotToScreen( new Point( varX.min_value, varY.max_value ), iPlotConnection );
+    var bottom_right = projectPlotToScreen( new Point( varX.max_value, varY.min_value ), iPlotConnection );
+    return { x:top_left.x, y:top_left.y, w:bottom_right.x-top_left.x, h:bottom_right.y-top_left.y };
 }
 
 // -----------------------------------------------------------------------------------
