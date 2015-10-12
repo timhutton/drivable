@@ -496,7 +496,8 @@ function initWithTest() {
     for( var i = 0; i < N_CONNECTIONS; i++ ) {
         connections[i] = new Connection(i,i+1); 
         connections[i].constraints.push( new Constraint( new LineSegment( new Point(0,0), new Point(250,250) ), 0,0,0,0 ) );
-        connections[i].constraints.push( new Constraint( new LineSegment( new Point(250,250), new Point(500,300) ), 0,0,0,0 ) );
+        //connections[i].constraints.push( new Constraint( new LineSegment( new Point(250,250), new Point(500,300) ), 0,0,0,0 ) );
+        connections[i].constraints.push( new Constraint( new LineSegment( new Point(250,250), new Point(100,0) ), 0,0,0,0 ) );
         connections[i].constraints.push( new Constraint( new LineSegment( new Point(500,300), new Point(300,500) ), 0,0,0,0 ) );
         connections[i].constraints.push( new Constraint( new LineSegment( new Point(400,600), new Point(200,400) ), 0,0,0,0 ) );
     }
@@ -1076,7 +1077,11 @@ function otherConstraintsAllowMiss( move, constraints, iAskingConstraint ) {
                     var v = sub( move.p2, move.p1 );
                     var g1 = getGradientForConstraint( v, constraints[ iAskingConstraint ].segment );
                     var g2 = getGradientForConstraint( v, constraint.segment );
-                    if( ( g1 < 0 && g2 > 0 ) || ( g1 > 0 && g2 < 0 ) ) {
+                    var gradients_have_opposite_sign = ( g1 < 0 && g2 > 0 ) || ( g1 > 0 && g2 < 0 );
+                    var constraint_surface_normal = norm( perp( sub( constraint.segment.p2, constraint.segment.p1 ) ) );
+                    var move_is_into_constraint = dot( v, constraint_surface_normal ) < 0;
+                    var other_constraint_is_steeper = Math.abs( g2 ) > Math.abs( g1 );
+                    if( gradients_have_opposite_sign && ( move_is_into_constraint || other_constraint_is_steeper ) ) {
                         // constraints that meet are pushing in opposite directions, causing a CORNER_JAM
                         return false;
                     }
