@@ -53,7 +53,6 @@ var grabPos = null;
 var isDragging = false;
 
 var iHighlightedConnection = -1;
-var iHighlightedConstraintGroup = -1;
 var iHighlightedConstraint = -1;
 
 var N_PARTS = null;
@@ -66,16 +65,17 @@ var variables = null;
 var CollisionOutcome = {
     MISS:                  1,
     FRICTION_JAM:          2,
-    PARTIAL_SLIDE:         3,
-    SLIDE_TO_END:          4,
-    SLIDE_TO_FRICTION_JAM: 5,
-    SLIDE_TO_CORNER_JAM:   6
+    SLIDE:                 3,
+    NOT_REACHED_YET:       4,
+    ALREADY_AT_END:        5,
+    CORNER_JAM:            6
 };
 
 // ====================================================================================
 
-//initWithTrucks(5);
-initWithTest();
+initWithTrucks(5);
+//initWithTestParts();
+//initWithTest();
 draw(canvas);
 
 // ====================================================================================
@@ -110,21 +110,13 @@ function Variable( label, iPart, initial_value, transform, min_value, max_value 
 function Connection(a,b) {
     this.a = a; // this indexed variable is the x-coordinate
     this.b = b; // this indexed variable is the y-coordinate
-    this.connected_segments = [];
-}
-
-// -----------------------------------------------------------------------------------
-
-function ConnectedSegmentGroup() {
     this.constraints = [];
 }
 
 // -----------------------------------------------------------------------------------
 
-function Constraint( seg, connected_to_previous, connected_to_next, iPart1, iPt1, iPart2, iSeg2 ) {
+function Constraint( seg, iPart1, iPt1, iPart2, iSeg2 ) {
     this.segment = seg;
-    this.connected_to_previous = connected_to_previous;
-    this.connected_to_next = connected_to_next;
     this.iPart1 = iPart1;
     this.iPt1 = iPt1;
     this.iPart2 = iPart2;
@@ -147,7 +139,7 @@ function LineSegment(p1,p2) {
 
 // ====================================================================================
 
-function initWithTest() {
+function initWithTestParts() {
     N_VARIABLES = 2;
     N_PARTS = 2;
     var N = 20;
@@ -266,7 +258,6 @@ function computeConstraints( iVar1, iVar2 ) {
     var v2 = var2.transform.translation; // TODO: rotations
     
     // collisions between objects: make constraints from each (line segment, point) pair
-    var collision_group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
     for( var iPt1 = 0; iPt1 < poly1.length; iPt1++ ) {
         var p1 = poly1[ iPt1 ];
         var seg1L = new LineSegment( poly1[ (iPt1+poly1.length-1)%poly1.length ], p1 );
@@ -286,7 +277,7 @@ function computeConstraints( iVar1, iVar2 ) {
             if( dot(p2N, seg1RN)<epsilon && ((gradientS2LNonS1R<epsilon && gradientS2RNonS1R>-epsilon) || (gradientS2LNonS1R>-epsilon && gradientS2RNonS1R<epsilon)) ) {
                 // add seg1R as a constraint
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg1R, v1, p2, v2 );
-                collision_group.constraints.push( new Constraint( constraint_segment, false, false, var2.iPart, iPt2, var1.iPart, iPt1 ) );
+                connection.constraints.push( new Constraint( constraint_segment, var2.iPart, iPt2, var1.iPart, iPt1 ) );
             }
             var gradientS1LNonS2R = getGradientForConstraint( seg1LN, seg2R );
             var gradientS1RNonS2R = getGradientForConstraint( seg1RN, seg2R );
@@ -295,36 +286,35 @@ function computeConstraints( iVar1, iVar2 ) {
                 var constraint_segment = getConstraintSegmentFromLineSegmentAndPoint( seg2R, v2, p1, v1 );
                 constraint_segment.p1 = reflectXY( constraint_segment.p1 );
                 constraint_segment.p2 = reflectXY( constraint_segment.p2 );
-                collision_group.constraints.push( new Constraint( constraint_segment, false, false, var1.iPart, iPt1, var2.iPart, iPt2 ) );
+                connection.constraints.push( new Constraint( constraint_segment, var1.iPart, iPt1, var2.iPart, iPt2 ) );
             }
         }
     }
-    connection.connected_segments.push( collision_group );
     
-    connection.connected_segments.push( getConstraintsFromWalls2( iVar1, iVar2 ) );
+    addConstraintsFromWalls( connection );
     
     return connection;
 }
 
 // -----------------------------------------------------------------------------------
 
-function getConstraintsFromWalls2( iVar1, iVar2 ) {
-    var collision_group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
+function addConstraintsFromWalls( connection ) {
+    var iVar1 = connection.a;
+    var iVar2 = connection.b;
     var range1 = getConstraintsFromWalls( iVar1 );
     var range2 = getConstraintsFromWalls( iVar2 );
     variables[ iVar1 ].min_value = range1[0]-20;
     variables[ iVar1 ].max_value = range1[1]+20;
     variables[ iVar2 ].min_value = range2[0]-20;
     variables[ iVar2 ].max_value = range2[1]+20;
-    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[0], range2[0] ), new Point( range1[1], range2[0] ) ), 
-        true, true, variables[ iVar2 ].iPart, range2[2], -1, -1 ) ); // bottom wall
-    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[1], range2[0] ), new Point( range1[1], range2[1] ) ), 
-        true, true, variables[ iVar1 ].iPart, range1[3], -1, -1 ) ); // right wall
-    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[1], range2[1] ), new Point( range1[0], range2[1] ) ), 
-        true, true, variables[ iVar2 ].iPart, range2[3], -1, -1 ) ); // top wall
-    collision_group.constraints.push( new Constraint( new LineSegment( new Point( range1[0], range2[1] ), new Point( range1[0], range2[0] ) ), 
-        true, true, variables[ iVar1 ].iPart, range1[2], -1, -1 ) ); // left wall
-    return collision_group;
+    connection.constraints.push( new Constraint( new LineSegment( new Point( range1[0], range2[0] ), new Point( range1[1], range2[0] ) ), 
+        variables[ iVar2 ].iPart, range2[2], -1, -1 ) ); // bottom wall
+    connection.constraints.push( new Constraint( new LineSegment( new Point( range1[1], range2[0] ), new Point( range1[1], range2[1] ) ), 
+        variables[ iVar1 ].iPart, range1[3], -1, -1 ) ); // right wall
+    connection.constraints.push( new Constraint( new LineSegment( new Point( range1[1], range2[1] ), new Point( range1[0], range2[1] ) ), 
+        variables[ iVar2 ].iPart, range2[3], -1, -1 ) ); // top wall
+    connection.constraints.push( new Constraint( new LineSegment( new Point( range1[0], range2[1] ), new Point( range1[0], range2[0] ) ), 
+        variables[ iVar1 ].iPart, range1[2], -1, -1 ) ); // left wall
 }
 
 // -----------------------------------------------------------------------------------
@@ -422,64 +412,133 @@ function initWithTrucks( numTrucksWanted ) {
         //continue;
         
         connections[i] = new Connection(i,i+1); 
-        var group = new ConnectedSegmentGroup(); // within a group, constraints join onto each other in sequence
         if( N_CONNECTIONS == 1 ) {
             var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
                                                             new Point( truck_width/2, truck_width + truck_width/2 ) ),
-                                           true,
-                                           true,
+                                           0,0,0,0 ); // TODO
+            connections[i].constraints.push( leftWall );
+            var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
+                                                              new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( trucksPush );
+            var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
+                                                             new Point( truck_width/2, area_width-truck_width/2 ) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( rightWall );
+        }
+        else if( i == 0 ) {
+            var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
+                                                            new Point( truck_width/2, truck_width + truck_width/2 ) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( leftWall );
+            var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
+                                                              new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( trucksPush );
+        }
+        else if( i == N_CONNECTIONS-1 ) {
+            var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
+                                                              new Point( area_width - truck_width*3/2, area_width - truck_width/2 ) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( trucksPush );
+            var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
+                                                             new Point( truck_width/2, area_width-truck_width/2 ) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( rightWall );
+        }
+        else {
+            var trucksPush = new Constraint( new LineSegment( new Point(truck_width/2,truck_width+truck_width/2),
+                                                              new Point(area_width-truck_width*3/2,area_width-truck_width/2) ),
+                                           0,0,0,0 ); // TODO );
+            connections[i].constraints.push( trucksPush );
+        }
+    }
+}
+    
+// -----------------------------------------------------------------------------------
+
+function initWithTest() {
+    var numTrucksWanted = 2;
+    var truck_width = 60;
+    var truck_height = 40;
+    var truck_top = 200;
+    
+    N_VARIABLES = numTrucksWanted;
+    N_PARTS = N_VARIABLES; // (for now each part has a single degree of freedom)
+
+    // each part is a polygon, centered at its rotation point
+    parts = new Array( N_PARTS );
+    for( var iPart = 0; iPart < N_PARTS; iPart++ ) {
+        var poly = [ new Point(-truck_width/2,-truck_height/2), new Point(truck_width/2,-truck_height/2),
+                     new Point(truck_width/2,truck_height/2),   new Point(-truck_width/2,truck_height/2) ];
+        var initial_transform = new Transform( 0, new Point(0,truck_top) );
+        var label = String.fromCharCode( 65 + iPart );
+        var variables_that_affect_us = [ iPart ];
+        parts[iPart] = new Part( label, poly, initial_transform, variables_that_affect_us );
+    }
+
+    // each variable applies to a part, and transforms it in some way
+    variables = new Array(N_VARIABLES);
+    for( var iVariable = 0; iVariable < N_VARIABLES; iVariable++ ) {
+        var initial_value = (iVariable+1) * area_width / (N_PARTS+1);
+        var transform = new Transform( 0, new Point(1,0) );
+        var iPart = iVariable;
+        var label = parts[ iPart ].label; // (if this part had more than one variable then would need to disambiguate)
+        var min_value = 0;
+        var max_value = area_width;
+        variables[iVariable] = new Variable( label, iPart, initial_value, transform, min_value, max_value );
+    }    
+
+    N_CONNECTIONS = N_PARTS-1;
+
+    // stop the trucks passing through each other or the wall
+    connections = new Array(N_CONNECTIONS);
+    for( var i = 0; i < N_CONNECTIONS; i++ ) {
+        // DEBUG - want to do this but need to deal with parallel moves first
+        //connections[i] = computeConstraints(i,i+1);
+        //continue;
+        
+        connections[i] = new Connection(i,i+1); 
+        /*if( N_CONNECTIONS == 1 ) {
+            var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
+                                                            new Point( truck_width/2, truck_width + truck_width/2 ) ),
                                            0,0,0,0 ); // TODO
             group.constraints.push( leftWall );
             var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
                                                               new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
-                                             true,
-                                             true,
                                            0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
             var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
                                                              new Point( truck_width/2, area_width-truck_width/2 ) ),
-                                            true,
-                                            true,
                                            0,0,0,0 ); // TODO );
             group.constraints.push( rightWall );
         }
         else if( i == 0 ) {
             var leftWall = new Constraint( new LineSegment( new Point( truck_width/2, area_width - truck_width/2 ),
                                                             new Point( truck_width/2, truck_width + truck_width/2 ) ),
-                                           false,
-                                           true,
                                            0,0,0,0 ); // TODO );
             group.constraints.push( leftWall );
             var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
                                                               new Point( area_width - truck_width*3/2, area_width - truck_width/2) ),
-                                             true,
-                                             false,
                                            0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
         }
         else if( i == N_CONNECTIONS-1 ) {
             var trucksPush = new Constraint( new LineSegment( new Point( truck_width/2, truck_width + truck_width/2 ),
                                                               new Point( area_width - truck_width*3/2, area_width - truck_width/2 ) ),
-                                             false,
-                                             true,
                                            0,0,0,0 ); // TODO );
             group.constraints.push( trucksPush );
             var rightWall = new Constraint( new LineSegment( new Point( area_width - truck_width*3/2, area_width-truck_width/2 ),
                                                              new Point( truck_width/2, area_width-truck_width/2 ) ),
-                                            true,
-                                            false,
                                            0,0,0,0 ); // TODO );
             group.constraints.push( rightWall );
         }
-        else {
+        else*/ {
             var trucksPush = new Constraint( new LineSegment( new Point(truck_width/2,truck_width+truck_width/2),
                                                               new Point(area_width-truck_width*3/2,area_width-truck_width/2) ),
-                                             false,
-                                             false,
                                            0,0,0,0 ); // TODO );
-            group.constraints.push( trucksPush );
+            connections[i].constraints.push( trucksPush );
         }
-        connections[i].connected_segments.push( group );
     }
 }
     
@@ -651,78 +710,64 @@ function draw() {
 
     // plot
     for( var iPlotConnection = 0; iPlotConnection < N_CONNECTIONS; iPlotConnection++ ) {
-        var connection = connections[ iPlotConnection ];
-        var varX = variables[ connection.a ];
-        var varY = variables[ connection.b ];
-        // blank the plot area
-        var plot_rect = getPlotRect( iPlotConnection );
-        context.beginPath();
-        context.rect( plot_rect.x, plot_rect.y, plot_rect.w, plot_rect.h );
-        context.fillStyle = 'white';
-        context.fill();
-        context.save();
-        context.clip();
-        // label the axes
-        var horiz_axis_label_pos = new Point( plot_rect.x + plot_rect.w/2, plot_rect.y + plot_rect.h );
-        var vert_axis_label_pos = new Point( plot_rect.x, plot_rect.y + plot_rect.h/2 );
-        context.font = "12px Arial";
-        if( connection.a == iDrivenVariable ) {
-            if( currentMousePositionAccepted )
-                context.fillStyle = 'limegreen';
-            else
-                context.fillStyle = 'red';
-        }
-        else
-            context.fillStyle = "black";
-        context.textAlign = "center";
-        context.textBaseline = "bottom";
-        context.fillText( varX.label, horiz_axis_label_pos.x, horiz_axis_label_pos.y );
-        if( connection.b == iDrivenVariable ) {
-            if( currentMousePositionAccepted )
-                context.fillStyle = 'limegreen';
-            else
-                context.fillStyle = 'red';
-        }
-        else
-            context.fillStyle = "black";
-        context.textAlign = "left";
-        context.textBaseline = "middle";
-        context.fillText( varY.label, vert_axis_label_pos.x, vert_axis_label_pos.y );
-        /*{ // DEBUG: label the axis ranges
-            context.fillStyle = "black";
-            context.textAlign = "right";
-            context.textBaseline = "bottom";
-            context.fillText( varX.max_value.toString(), plot_rect.x + plot_rect.w, plot_rect.y + plot_rect.h );
-            context.textAlign = "left";
-            context.textBaseline = "top";
-            context.fillText( varY.max_value.toString(), plot_rect.x, plot_rect.y );
-        }*/
-        // draw the current state as a blue dot
-        var p = new Point( varX.value, varY.value );
-        var pp = projectPlotToScreen( p, iPlotConnection );
-        context.beginPath();
-        context.arc(pp.x, pp.y, 3, 0, 2*Math.PI);
-        context.fillStyle = 'blue';
-        context.fill();
-        // draw the constraints
-        for( var iSegmentGroup = 0; iSegmentGroup < connection.connected_segments.length; iSegmentGroup++) {
-            var segment_group = connection.connected_segments[ iSegmentGroup ];
-            for( var iSegment = 0; iSegment < segment_group.constraints.length; iSegment++) {
-                var constraint = segment_group.constraints[iSegment].segment;
-                var highlighted = (iPlotConnection==iHighlightedConnection) && (iSegmentGroup==iHighlightedConstraintGroup) && (iSegment==iHighlightedConstraint);
-                drawConstraint( constraint, iPlotConnection, highlighted );
-                /*{ // DEBUG: label it
-                    var label_pos = projectPlotToScreen( div( add( constraint.p1, constraint.p2 ), 2 ), iPlotConnection );
-                    context.font = "10px Arial";
-                    context.textAlign = "center";
-                    context.textBaseline="middle"; 
-                    context.fillStyle = "black";
-                    context.fillText( iPlotConnection.toString()+","+iSegmentGroup.toString()+","+iSegment.toString(), label_pos.x, label_pos.y );
-                }*/
-            }
-        }
-        context.restore();
+        drawPlot( iPlotConnection );
     }
+}
+
+// -----------------------------------------------------------------------------------
+
+function drawPlot( iPlotConnection ) {
+    var connection = connections[ iPlotConnection ];
+    var varX = variables[ connection.a ];
+    var varY = variables[ connection.b ];
+    // blank the plot area
+    var plot_rect = getPlotRect( iPlotConnection );
+    context.beginPath();
+    context.rect( plot_rect.x, plot_rect.y, plot_rect.w, plot_rect.h );
+    context.fillStyle = 'white';
+    context.fill();
+    context.save();
+    context.clip();
+    // label the axes
+    var horiz_axis_label_pos = new Point( plot_rect.x + plot_rect.w/2, plot_rect.y + plot_rect.h );
+    var vert_axis_label_pos = new Point( plot_rect.x, plot_rect.y + plot_rect.h/2 );
+    context.font = "12px Arial";
+    if( connection.a == iDrivenVariable ) {
+        if( currentMousePositionAccepted )
+            context.fillStyle = 'limegreen';
+        else
+            context.fillStyle = 'red';
+    }
+    else
+        context.fillStyle = "black";
+    context.textAlign = "center";
+    context.textBaseline = "bottom";
+    context.fillText( varX.label, horiz_axis_label_pos.x, horiz_axis_label_pos.y );
+    if( connection.b == iDrivenVariable ) {
+        if( currentMousePositionAccepted )
+            context.fillStyle = 'limegreen';
+        else
+            context.fillStyle = 'red';
+    }
+    else
+        context.fillStyle = "black";
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.fillText( varY.label, vert_axis_label_pos.x, vert_axis_label_pos.y );
+    // draw the current state as a blue dot
+    var p = new Point( varX.value, varY.value );
+    var pp = projectPlotToScreen( p, iPlotConnection );
+    context.beginPath();
+    context.arc(pp.x, pp.y, 3, 0, 2*Math.PI);
+    context.fillStyle = 'blue';
+    context.fill();
+    // draw the constraints
+    for( var iConstraint = 0; iConstraint < connection.constraints.length; iConstraint++) {
+        var constraint_segment = connection.constraints[ iConstraint ].segment;
+        var highlighted = (iPlotConnection==iHighlightedConnection) && (iConstraint==iHighlightedConstraint);
+        drawConstraint( constraint_segment, iPlotConnection, highlighted );
+    }
+    context.restore();
 }
 
 // -----------------------------------------------------------------------------------
@@ -783,8 +828,8 @@ function drawPart( iPart ) {
     context.fillText( part.label, centroid.x, centroid.y );
     
     // draw the highlighted vertex and segment
-    if( iHighlightedConnection >= 0 && iHighlightedConstraintGroup >= 0 && iHighlightedConstraint >=0 ) {
-        var highlighted_constraint = connections[ iHighlightedConnection ].connected_segments[ iHighlightedConstraintGroup ].constraints[ iHighlightedConstraint ];
+    if( iHighlightedConnection >= 0 && iHighlightedConstraint >=0 ) {
+        var highlighted_constraint = connections[ iHighlightedConnection ].constraints[ iHighlightedConstraint ];
         if( highlighted_constraint.iPart1 == iPart ) {
             var p = projectAreaToScreen( poly[ highlighted_constraint.iPt1 ] );
             context.fillStyle = 'blue';
@@ -898,17 +943,17 @@ function drawVariableHandle( iVariable, areaPos ) {
 
 function drawArrow( from, to ) {
     var headlen = 10; // length of head in pixels
-    var angle = Math.atan2(to.y-from.y,to.x-from.x);
+    var angle = Math.atan2( to.y - from.y, to.x - from.x );
 
     context.beginPath();
-    context.moveTo(from.x, from.y);
-    context.lineTo(to.x, to.y);
+    context.moveTo( from.x, from.y );
+    context.lineTo( to.x, to.y );
     context.stroke();
 
     context.beginPath();
-    context.moveTo(to.x-headlen*Math.cos(angle-Math.PI/6),to.y-headlen*Math.sin(angle-Math.PI/6));
-    context.lineTo(to.x, to.y);
-    context.lineTo(to.x-headlen*Math.cos(angle+Math.PI/6),to.y-headlen*Math.sin(angle+Math.PI/6));
+    context.moveTo( to.x - headlen * Math.cos( angle - Math.PI/6 ), to.y - headlen * Math.sin( angle - Math.PI/6 ) );
+    context.lineTo( to.x, to.y );
+    context.lineTo( to.x - headlen * Math.cos( angle + Math.PI/6 ), to.y - headlen * Math.sin( angle + Math.PI/6 ) );
     context.stroke();
 }
 
@@ -917,12 +962,7 @@ function drawArrow( from, to ) {
 function drawConstraint( constraint, iPlotConnection, highlighted ) {
     var a = projectPlotToScreen( constraint.p1, iPlotConnection );
     var b = projectPlotToScreen( constraint.p2, iPlotConnection );
-    drawDirectedLineSegment( a, b, highlighted );
-}
-    
-// -----------------------------------------------------------------------------------
 
-function drawDirectedLineSegment( a, b, highlighted ) {
     context.beginPath();
     context.moveTo( a.x, a.y );
     context.lineTo( b.x, b.y );
@@ -959,7 +999,7 @@ function tryMoveDriver( grabPos, mousePos ) {
     var p1 = applyPartTransformWithChangedVariable( variable.iPart, pp, iDrivenVariable, variable.value + arrow_length_in_variable_units );
     var p2 = applyPartTransformWithChangedVariable( variable.iPart, pp, iDrivenVariable, variable.value - arrow_length_in_variable_units );
     var new_value = null;
-    if( len( sub( mousePos, p1 ) ) < len( sub( mousePos, p2 ) ) ) {
+    if( dist( mousePos, p1 ) < dist( mousePos, p2 ) ) {
         // move in p1 direction (+ve)
         var a = sub( mousePos, grabPos );
         var b = sub( p1, grabPos );
@@ -971,117 +1011,131 @@ function tryMoveDriver( grabPos, mousePos ) {
         var b = sub( p2, grabPos );
         new_value = variable.value - dot( a, norm( b ) ) * arrow_length_in_variable_units / len( b );
     }
-
-    var moved = new Array( N_VARIABLES );
-    for( var i = 0; i < N_VARIABLES; i++ )
-        moved[ i ] = false;
-    return tryChangeVariable( iDrivenVariable, new_value, moved );
+    
+    return tryChangeVariable( iDrivenVariable, new_value );
 }
 
 // -----------------------------------------------------------------------------------
 
-function tryChangeVariable( iVariable, new_value, moved ) {
-    // TODO: take copy of moved values, in order to restore after each recursion call? think only need if 
-    //       repeatedly searching for constraints in order to go all the way to new_value
-    //while(1) 
-    {
-        // find the first constraint that intersects this change
-        var cr = findFirstConstraintCollision( iVariable, new_value, moved );
-        // if none then there's nothing in the way, so we don't need to check any further
-        if( cr.outcome == CollisionOutcome.MISS ) {
-            variables[ iVariable ].value = new_value;
-            return true;
+function tryChangeVariable( iVariable, new_value ) {
+    var from = new Array( N_VARIABLES );
+    var to = new Array( N_VARIABLES );
+    while( Math.abs( variables[ iVariable ].value - new_value ) > epsilon ) {
+        // find the safe linear path that takes us some way, but break if one doesn't exist
+        for( var i = 0; i < N_VARIABLES; i++ ) {
+            from[ i ] = variables[ i ].value;
+            to[ i ] = ( i == iVariable ) ? new_value : from[ i ];
         }
-        // if friction jam then we can stop immediately, with no knock-on effects
-        if( cr.outcome == CollisionOutcome.FRICTION_JAM ) {
-            variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
-            return false;
+        var path_result = getSafeLinearPath( from, to );
+        if( !path_result.exists )
+            return false; // we are jammed at this location and can go no further
+        // apply the move
+        for( var i = 0; i < N_VARIABLES; i++ ) {
+            variables[ i ].value = path_result.new_location[ i ];
         }
-        // else this move has caused a slide (to end of constraint or partial) which
-        // drives another variable. So we need to recurse down to check if we can change *that* variable.
-        var old_other_value = variables[ cr.iOtherVariable ].value;
-        var new_other_value = cr.isA ? cr.slideTo.y : cr.slideTo.x;
-        moved[ iVariable ] = true;
-        var ok = tryChangeVariable( cr.iOtherVariable, new_other_value, moved );
-        if( !ok ) {
-            // one of the other parts jammed somewhere along the slide - but where?
-            // can we just inspect the other variable to see how far it got?
-            //variables[ iVariable ].value += ( new_value - variables[ iVariable ].value ) * ( variables[ cr.iOtherVariable ].value - old_other_value ) / ( new_other_value - old_other_value );
-            // or just move this part as far as we know is safe?
-            variables[ iVariable ].value = cr.isA ? cr.firstContact.x : cr.firstContact.y;
-            // (this is OK for now - might take another little push to make full contact)
-            // (or do we need to return something from the tryChangeVariable function somehow?)
-            return false; 
-        }
-        variables[ iVariable ].value = cr.isA ? cr.slideTo.x : cr.slideTo.y;
-        if( cr.outcome == CollisionOutcome.SLIDE_TO_CORNER_JAM || cr.outcome == CollisionOutcome.SLIDE_TO_FRICTION_JAM ) {
-            // we slid on this constraint without subsequent problems but now we can go no further
-            return false;
-        }
-        if( cr.outcome == CollisionOutcome.PARTIAL_SLIDE ) {
-            // we slid all the way we wanted and there were no knock-on problems so we're done
-            return true;
-        }
-        // (else is CollisionOutcome.SLIDE_TO_END)
-        // so now we have navigated past the first constraint and we have made some progress towards new_value
-        // but we need to try to move further from this location, checking the constraints again
-        // (maybe check here that we did make *some* progress, else may loop forever)
-        // (or guarantee that we haven't checked each constraint already)
-        return true; // DEBUG - although maybe is actually better like this for visualisation since it draws the progress so far
-                     //         and subsequent mouse moves will take it further. for parts with complex shapes this might get annoying
-                     //         since the user would have to wiggle their mouse to persuade the driven part to keep moving through
-                     //         multiple constraints.
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------------
+
+function getSafeLinearPath( from, to ) {
+    var cr = findFirstConstraintCollision( from, to );
+    switch( cr.outcome ) {
+        case CollisionOutcome.MISS:
+            // this whole path is safe
+            return { exists:true, new_location:to };
+        case CollisionOutcome.NOT_REACHED_YET: 
+            // can safely move forwards a little
+            return { exists:true, new_location:cr.new_location };
+        case CollisionOutcome.FRICTION_JAM:
+        case CollisionOutcome.CORNER_JAM:
+            // cannot move any further
+            return { exists:false }; 
+        case CollisionOutcome.SLIDE:
+            // TODO: test this linear segment against all the other constraints (recurse down?)
+            return { exists:true, new_location:cr.new_location }; // for now just allow it
+        default:
+            throw new Error('Unrecognised collision outcome.');
     }
 }
 
 // -----------------------------------------------------------------------------------
 
-function findFirstConstraintCollision( iVariable, new_value, moved ) {
-    // Find the first constraint that intersects this change (in any connection that this variable has with a not moved variable)
-    var first_collision = { outcome:CollisionOutcome.MISS };
+function findFirstConstraintCollision( from, to ) {
+    // Find the first constraint that intersects this change
+    // returns: outcome: { CollisionOutcome, new_location:float[N_VARIABLES] }
+    var first_collision = { outcome:CollisionOutcome.MISS, new_location:new Array( N_VARIABLES ) };
     var closest_dist = Number.MAX_VALUE;
     for( var iConnection = 0; iConnection < N_CONNECTIONS; iConnection++ ) {
         var connection = connections[ iConnection ];
-        var move = null;
-        var iOtherVariable = null;
-        var isA = null;
-        if( connection.a == iVariable && !moved[ connection.b ] )
-        {
-            isA = true;
-            iOtherVariable = connection.b;
-            move = new LineSegment( new Point( variables[ iVariable ].value, variables[ iOtherVariable ].value ), 
-                                    new Point( new_value, variables[ iOtherVariable ].value ) );
-        }
-        else if( connection.b == iVariable && !moved[ connection.a ] )
-        {
-            isA = false;
-            iOtherVariable = connection.a;
-            move = new LineSegment( new Point( variables[ iOtherVariable ].value, variables[ iVariable ].value ), 
-                                    new Point( variables[ iOtherVariable ].value, new_value ) );
-        }
-        else {
-            continue;
-        }
-        for( var iConstraintGroup = 0; iConstraintGroup < connection.connected_segments.length; iConstraintGroup++ ) {
-            var constraints = connection.connected_segments[ iConstraintGroup ].constraints;
-            for( var iConstraint = 0; iConstraint < constraints.length; iConstraint++ ) {
-                var cr = testConstraint( move, constraints, iConstraint );
-                if( cr.outcome == CollisionOutcome.MISS ) continue;
-                var dist = len( sub( cr.firstContact, move.p1 ) );
-                if( dist < closest_dist ) {
-                    closest_dist = dist;
-                    first_collision = cr;
-                    first_collision.iOtherVariable = iOtherVariable;
-                    first_collision.isA = isA;
-                    // show the user what is happening
-                    iHighlightedConnection = iConnection;
-                    iHighlightedConstraintGroup = iConstraintGroup;
-                    iHighlightedConstraint = iConstraint;
-                }
+        var move = new LineSegment( new Point( from[ connection.a ], from[ connection.b ] ), new Point( to[ connection.a ], to[ connection.b ] ) );
+        for( var iConstraint = 0; iConstraint < connection.constraints.length; iConstraint++ ) {
+            var cr = testConstraint( move, connection.constraints[ iConstraint ] );
+            if( cr.outcome == CollisionOutcome.MISS ) continue;
+            if( cr.outcome == CollisionOutcome.ALREADY_AT_END ) {
+                // TODO: decide if this is a MISS or a CORNER_JAM
+                cr.outcome = CollisionOutcome.CORNER_JAM; // (for now)
+            }
+            var d = dist( cr.point, move.p1 );
+            if( d < closest_dist ) {
+                closest_dist = d;
+                first_collision.outcome = cr.outcome;
+                for( var i = 0; i < N_VARIABLES; i++ )
+                    first_collision.new_location[ i ] = from[ i ];
+                first_collision.new_location[ connection.a ] = cr.point.x;
+                first_collision.new_location[ connection.b ] = cr.point.y;
+                // show the user what is happening
+                iHighlightedConnection = iConnection;
+                iHighlightedConstraint = iConstraint;
             }
         }
     }
     return first_collision;
+}
+
+// -----------------------------------------------------------------------------------
+
+function testConstraint( move, constraint ) {
+    // move: a LineSegment in the a,b coordinates of constraint
+    // constraint: a Constraint
+    // returns: outcome:CollisionOutcome, point:final Point after collision or slide
+    
+    // a move is a collision if:
+    // 1. the move segment intersects the constraint segment, and
+    // 2. the end of the move is behind the constraint segment, and
+    // 3. the start of the move is not behind the constraint segment
+    var intersection = lineSegmentsIntersection( move, constraint.segment );
+    var endIsBehind = isBehind( move.p2, constraint.segment );
+    var startIsBehind = isBehind( move.p1, constraint.segment );
+    if( !intersection.test || !endIsBehind || startIsBehind ) {
+        // no collision
+        return { outcome:CollisionOutcome.MISS, point:move.p2 };
+    }
+    if( dist( move.p1, intersection.point ) > epsilon ) {
+        return { outcome:CollisionOutcome.NOT_REACHED_YET, point:intersection.point };
+    }
+    var gradient = getGradientForConstraint( sub( move.p2, move.p1 ), constraint.segment );
+    if( Math.abs( gradient ) < minGradient ) {
+        // friction jam
+        return { outcome:CollisionOutcome.FRICTION_JAM, point:move.p1 };
+    }
+    var slide_intersection = lineSegmentWithLineIntersection( constraint.segment, move.p2, perp( sub( move.p2, move.p1 ) ) );
+    if( slide_intersection.test ) {
+        // partial slide
+        return { outcome:CollisionOutcome.SLIDE, point:slide_intersection.point };
+    }
+    var slideEnd = null;
+    if( gradient < 0 ) {
+        slideEnd = constraint.segment.p1;
+    }
+    else {
+        slideEnd = constraint.segment.p2;
+    }
+    if( dist( slideEnd, move.p1 ) < epsilon ) {
+        return { outcome:CollisionOutcome.ALREADY_AT_END, point:move.p1 };
+    }
+    return { outcome:CollisionOutcome.SLIDE, point:slideEnd };
 }
 
 // -----------------------------------------------------------------------------------
@@ -1099,6 +1153,12 @@ function getMousePos(canvas, evt) {
 function isBehind( point, constraint ) {
     var dp = dot( norm( sub( point, constraint.p1 ) ), norm( perp( sub( constraint.p2, constraint.p1 ) ) ) );
     return dp < -epsilon; // (allow for floating point issues)
+}
+
+// -----------------------------------------------------------------------------------
+
+function dist( a, b ) {
+    return len( sub( a, b ) );
 }
 
 // -----------------------------------------------------------------------------------
@@ -1163,67 +1223,12 @@ function pointInRect( p, r ) {
 
 // -----------------------------------------------------------------------------------
 
-function testConstraint( move, constraints, iConstraint ) {
-    var constraint = constraints[iConstraint];
-    // a move is a collision if:
-    // 1. the move segment intersects the constraint segment
-    // 2. the end of the move is behind the constraint segment
-    // 3. the start of the move is not behind the constraint segment
-    // 4. the resulting slide would leave the start in a different place
-    var intersection = lineSegmentsIntersection( move, constraint.segment );
-    var endIsBehind = isBehind( move.p2, constraint.segment );
-    var startIsBehind = isBehind( move.p1, constraint.segment );
-    if( !intersection.test || !endIsBehind || startIsBehind ) {
-        // no collision
-        return { outcome:CollisionOutcome.MISS };
-    }
-    var gradient = getGradientForConstraint( sub( move.p2, move.p1 ), constraint.segment );
-    if( Math.abs( gradient ) < minGradient ) {
-        // friction jam
-        return { outcome:CollisionOutcome.FRICTION_JAM, firstContact:intersection.point };
-    }
-    var beforeSegment = new LineSegment( move.p1, intersection.point );
-    var slide_intersection = lineSegmentWithLineIntersection( constraint.segment, move.p2, perp( sub( move.p2, move.p1 ) ) );
-    if( slide_intersection.test ) {
-        // partial slide
-        return { outcome:CollisionOutcome.PARTIAL_SLIDE, firstContact:intersection.point, slideTo:slide_intersection.point };
-    }
-    // if we slid to the end, check that the next segment in the sequence has a favorable gradient
-    // else this is a jam position
-    var slideEnd = null;
-    var neighboring_constraint = null;
-    var has_neighbor = false;
-    if( gradient < 0 ) {
-        slideEnd = constraint.segment.p1;
-        if( constraint.connected_to_previous ) {
-            has_neighbor = true;
-            neighboring_constraint = constraints[ ( iConstraint - 1 + constraints.length ) % constraints.length ];
-        }
-    }
-    else {
-        slideEnd = constraint.segment.p2;
-        if( constraint.connected_to_next ) {
-            has_neighbor = true;
-            neighboring_constraint = constraints[ ( iConstraint + 1 ) % constraints.length ];
-        }
-    }
-    var neighboring_gradient = null;
-    if( has_neighbor )
-        neighboring_gradient = getGradientForConstraint( sub( move.p2, move.p1 ), neighboring_constraint.segment );
-    if( has_neighbor && Math.abs( neighboring_gradient ) < minGradient ) {
-        // slide to friction jam
-        return { outcome:CollisionOutcome.SLIDE_TO_FRICTION_JAM, firstContact:intersection.point, slideTo:slideEnd };
-    }
-    if( !has_neighbor || ( neighboring_gradient < 0 && gradient < 0 ) || ( neighboring_gradient > 0 && gradient > 0 ) ) {
-        if( len( sub( slideEnd, move.p1 ) ) < epsilon ) {
-            // no collision - would slide to the same place as we started
-            return { outcome:CollisionOutcome.MISS };
-        }
-        // slide to end
-        return { outcome:CollisionOutcome.SLIDE_TO_END, firstContact:intersection.point, slideTo:slideEnd };
-    }
-    // slide to corner jam
-    return { outcome:CollisionOutcome.SLIDE_TO_CORNER_JAM, firstContact:intersection.point, slideTo:slideEnd };
+function isPointOnLineSegment(p,s) {
+    // if AB == AC + BC then C lies on the line segment AB
+    var sl = dist( s.p2, s.p1 );
+    var a = dist( p, s.p1 );
+    var b = dist( p, s.p2 );
+    return Math.abs( sl - a - b ) < epsilon;
 }
 
 // -----------------------------------------------------------------------------------
@@ -1270,7 +1275,7 @@ function lineWithLineIntersection( u0, v0, u1, v1 ) {
 // -----------------------------------------------------------------------------------
 
 function getGradientForConstraint( v, constraint ) {
-    return dot( v, sub( constraint.p2, constraint.p1 ) );
+    return dot( norm( v ), norm( sub( constraint.p2, constraint.p1 ) ) ); // 0 = perpendicular, -ve = sliding left, +ve = sliding right
 }
 
 // -----------------------------------------------------------------------------------
